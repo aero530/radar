@@ -210,3 +210,50 @@ pub enum MessageCode {
     #[display("Shift Change ChecklistGeneric Data Format")]
     ShiftChangeChecklistGenericDataFormat = 202,
 }
+
+impl MessageCode {
+    pub fn is_supported_product(&self) -> bool {
+        let supported_products: [u32;33] = [19, 20, 25, 27, 28, 30, 32, 34, 56, 78, 79, 80, 94, 99, 134, 135, 138, 159, 161, 163, 165, 169, 170, 171, 172, 173, 174, 175, 176, 177, 181, 182, 186];
+        supported_products.contains(&(*self as u32))
+    }
+
+    pub fn supported_version(&self) -> Option<u8> {
+        match *self as u32 {
+            19 => Some(0),
+            20 => Some(0),
+            25 => Some(0),
+            27 => Some(0),
+            28 => Some(0),
+            30 => Some(0),
+            32 => Some(2),
+            34 => Some(2),
+            56 => Some(0),
+            78 => Some(1),
+            79 => Some(1),
+            80 => Some(1),
+            94 => Some(0),
+            99 => Some(0),
+            134 => Some(1),
+            135 => Some(0),
+            138 => Some(2),
+            159 => Some(0),
+            161 => Some(0),
+            163 => Some(0),
+            165 => Some(1),
+            169 => Some(0),
+            170 => Some(0),
+            171 => Some(0),
+            172 => Some(1),
+            173 => Some(0),
+            174 => Some(0),
+            175 => Some(0),
+            176 => Some(0),
+            177 => Some(0),
+            181 => Some(0),
+            182 => Some(0),
+            186 => Some(0),
+            _ => None,
+        }
+
+    }
+}

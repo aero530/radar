@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.80"
 # bytemuck = { version = "1.13.1" }
+bzip2 = "0.4.4"
 byteorder = "1"
 chrono = {version = "0.4.37", features = ["serde"]}
 tracing = {version = "0.1.40", featues = ["ansi", "env-filter"] }

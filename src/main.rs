@@ -3,15 +3,17 @@
 #[macro_use]
 extern crate num_derive;
 
+use bzip2::{bufread::BzDecoder, Decompress};
+
+
 use parse_display::{Display, FromStr};
-use std::path::PathBuf;
+use std::{io::Read, path::PathBuf};
 use chrono::{DateTime, Utc};
 
 use nom::{
-    bytes::complete::{tag, take, take_while_m_n},
-    character::complete::digit0,
-    IResult,
-    *,
+    bytes::complete::{is_a, tag, take, take_while}, character::{complete::digit0, is_digit}, 
+    combinator::{map, map_parser}, 
+    multi::many0, sequence::preceded, IResult, *
 };
 use tracing::{debug, error, info, trace, warn, Level};
 use tracing_subscriber::filter::EnvFilter;
@@ -25,6 +27,7 @@ pub struct Radar<'a> {
     text_header: TextHeader,
     message_header: MessageHeader,
     product_description: ProductDescription<'a>,
+    symbology_header: SymbologyHeader,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -55,10 +58,10 @@ pub struct MessageHeader {
     nblocks: i16,
 }
 
-// # Graphic Product Message: Product Description Block
-// # Description: section 3.3.1.1, page 3-3
-// # 102 bytes, 51 halfwords (halfwords 10-60)
-// # Figure 3-6, pages 3-24 and 3-25
+/// Graphic Product Message: Product Description Block
+/// Description: section 3.3.1.1, page 3-3
+/// 102 bytes, 51 halfwords (halfwords 10-60)
+/// Figure 3-6, pages 3-24 and 3-25
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ProductDescription<'a> {
     /// Delineate blocks, -1
@@ -108,6 +111,28 @@ pub struct ProductDescription<'a> {
     /// halfword offset to Tabular block
     offset_tabular: i32,
 }
+
+/// Graphic Product Message: Product Symbology Block
+/// Description
+/// 16 byte header
+/// Figure 3-6 (Sheet 8), pages 3-40
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SymbologyHeader {
+    /// Delineate blocks, -1
+    divider: i16,
+    /// Block ID, 1
+    id: i16,
+    /// Length of block in bytes
+    block_length: i32,
+    /// Number of data layers
+    layers: i16,
+    /// Delineate data layers, -1
+    layer_divider: i16,
+    /// Length of data layer in bytes
+    layer_length: i32,
+}
+
+
 
 /// Format of Text header is SDUSXX KYYYY DDHHMM\r\r\nAAABBB\r\r\n
 fn text_header(input: &[u8]) -> IResult<&[u8], TextHeader> {
@@ -273,40 +298,68 @@ fn product_description(input: &[u8]) -> IResult<&[u8], ProductDescription> {
 }
 
 
-fn parse(input: &[u8]) -> IResult<&[u8], Radar> {
+
+
+/// Graphic Product Message: Product Symbology Block
+/// Description
+/// 16 byte header
+/// Figure 3-6 (Sheet 8), pages 3-40
+fn symbology_header(input: &[u8]) -> IResult<&[u8], SymbologyHeader> {
+        
+    let (input, divider) = number::complete::i16(nom::number::Endianness::Big)(input)?;
+    let (input, id) = number::complete::i16(nom::number::Endianness::Big)(input)?;
+    let (input, block_length) = number::complete::i32(nom::number::Endianness::Big)(input)?;
+    let (input, layers) = number::complete::i16(nom::number::Endianness::Big)(input)?;
+    let (input, layer_divider) = number::complete::i16(nom::number::Endianness::Big)(input)?;
+    let (input, layer_length) = number::complete::i32(nom::number::Endianness::Big)(input)?;
+
+    Ok((
+        input,
+        SymbologyHeader {
+            divider,
+            id,
+            block_length,
+            layers,
+            layer_divider,
+            layer_length,
+        },
+    ))
+}
+
+fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar<'a>> {
 
     // Text header
     let (input, text_header) = text_header(input)?;
 
     // Read and decode 18 byte Message Header Block
     let (input, message_header) = message_header(input)?;
-    
-    //
-    //
-    // need to check if 'code' is in supported_products list
-    //
-    //
+        
+    // fail if code is not in supported products list
+    if !message_header.code.is_supported_product() {
+        let e = nom::error::Error::new(input, error::ErrorKind::Fail);
+        error!("Product type {:?} is not supported", message_header.code);
+        return Err(nom::Err::Failure(e));
+    };
 
     // Read and decode 102 byte Product Description Block
     let (input, product_description) = product_description(input)?;
 
-    //
-    //
     // Check product version number
-    //
-    //
+    // if there is a supported version of this product type BUT (and) the product version is greater than the supported version
+    if message_header.code.supported_version().is_some_and(|supported_version| product_description.version > supported_version) {
+        let e = nom::error::Error::new(input, error::ErrorKind::Fail);
+        error!("Product version is {:?} but currently only version <= {:?} are supported", product_description.version, message_header.code.supported_version().unwrap());
+        return Err(nom::Err::Failure(e));
+    }
 
-    //
-    //
-    // Uncompress symbology block if necessary
-    //
-    //
 
-    //
-    //
     // Read and decode symbology header (check packet code)
-    //
-    //
+    let (input, symbology_header) = if decomp_input.len()>0 {
+        symbology_header(decomp_input)?
+    } else {
+        symbology_header(input)?
+    };
+
 
     //
     //
@@ -314,13 +367,14 @@ fn parse(input: &[u8]) -> IResult<&[u8], Radar> {
     //
     //
 
-
+    
     Ok((
         input,
         Radar {
             text_header,
             message_header,
             product_description,
+            symbology_header,
         },
     ))
 }
@@ -349,9 +403,24 @@ fn main() {
         None => "".to_string(),
     };
     let filename = PathBuf::from(&path);
-    let file = std::fs::read(&filename).unwrap_or_default();
+    let mut file = std::fs::read(&filename).unwrap_or_default();
 
-    match parse(&file) {
+    let file_after_headers = file.split_off(150);
+
+
+    // Uncompress symbology block if necessary
+    let mut decomp_vec : Vec<u8> = Vec::new();
+    if file_after_headers[0..1] == "BZ".as_bytes()[0..1] {
+        let mut decoder = BzDecoder::new(file_after_headers.as_slice());
+        let q = decoder.read_to_end(&mut decomp_vec);
+
+        info!("Decompression {:?}", q);
+        
+        info!("{:?}", decomp_vec);
+    };    
+    
+
+    match parse(&file, &decomp_vec ) {
         Ok((leftover, value)) => {
             // warn!("Unmatched {:?}", leftover);
             info!("{:?}", value)
