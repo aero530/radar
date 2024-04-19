@@ -96,13 +96,13 @@ pub enum MessageCode {
     #[display("Base Reflectivity Data Array")]
     BaseReflectivityDataArray = 94,
     #[display("Composite Reflectivity Edited for AP 0.54 Nmi")]
-    CompositeReflectivityEditedforAP0p54Nmi = 97,
+    CompositeReflectivityEditedForAP0p54Nmi = 97,
     #[display("Composite Reflectivity Edited for AP 2.2 Nmi")]
-    CompositeReflectivityEditedforAP2p2Nmi = 98,
+    CompositeReflectivityEditedForAP2p2Nmi = 98,
     #[display("Base Velocity Data Array")]
     BaseVelocityDataArray = 99,
     #[display("Site Adaptable parameters for VAD Wind Profile (Product 48)")]
-    SiteAdaptableparametersforVADWindProfile = 100,
+    SiteAdaptableParametersForVADWindProfile = 100,
     #[display("Storm Track Alphanumeric Block")]
     StormTrackAlphanumericBlock = 101,
     #[display("Hail Index Alphanumeric Block")]
@@ -110,7 +110,7 @@ pub enum MessageCode {
     #[display("TVS Alphanumeric Block")]
     TVSAlphanumericBlock = 104,
     #[display("Site Adaptable Parameters for Combined Shear")]
-    SiteAdaptableParametersforCombinedShear = 105,
+    SiteAdaptableParametersForCombinedShear = 105,
     #[display("Surface Rainfall (1 hr) Alphanumeric Block")]
     SurfaceRainfall1HrAlphanumericBlock = 107,
     #[display("Surface Rainfall (3 hr) Alphanumeric Block")]
@@ -255,5 +255,28 @@ impl MessageCode {
             _ => None,
         }
 
+    }
+}
+
+#[derive(Display, FromStr, PartialEq, Debug, Copy, Clone, Default)]
+#[derive(FromPrimitive, ToPrimitive)]
+pub enum PacketCode {
+    #[display("AF1F")]
+    AF1F = -20705,
+    #[display("Radial")]
+    Radial = 16,
+    #[display("Generic Data")]
+    Generic = 28,
+    #[default]
+    #[display("Other / Unknown")]
+    Other = 0,
+}
+
+
+
+impl PacketCode {
+    pub fn is_supported_product(&self) -> bool {
+        let supported_products: [i32;3] = [-20705, 16, 28];
+        supported_products.contains(&(*self as i32))
     }
 }
