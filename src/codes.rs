@@ -1,9 +1,9 @@
 use parse_display::{Display, FromStr};
-
+use serde::{Deserialize, Serialize};
 
 /// TABLE II NEXRAD MESSAGE CODE DEFINITIONS
 /// TABLE III MESSAGE CODES FOR PRODUCTS
-#[derive(Display, FromStr, PartialEq, Debug, Copy, Clone, Default)]
+#[derive(Serialize, Deserialize, Display, FromStr, PartialEq, Debug, Copy, Clone, Default)]
 #[derive(FromPrimitive, ToPrimitive)]
 pub enum MessageCode {
     #[default]
@@ -258,7 +258,7 @@ impl MessageCode {
     }
 }
 
-#[derive(Display, FromStr, PartialEq, Debug, Copy, Clone, Default)]
+#[derive(Serialize, Deserialize, Display, FromStr, PartialEq, Debug, Copy, Clone, Default)]
 #[derive(FromPrimitive, ToPrimitive)]
 pub enum PacketCode {
     #[display("AF1F")]

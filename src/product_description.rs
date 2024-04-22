@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use nom::{
     bytes::complete::take, 
     IResult, 
@@ -8,9 +9,9 @@ use nom::{
 /// Graphic Product Message: Product Description Block
 /// Description: section 3.3.1.1, page 3-3
 /// 102 bytes, 51 halfwords (halfwords 10-60)
-/// Figure 3-6, pages 3-24 and 3-25
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ProductDescription<'a> {
+/// Figure 3-6, pages 3-21 and 3-25
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct ProductDescription {
     /// Delineate blocks, -1
     pub divider: i16,
     /// Latitude of radar, degrees, + for north
@@ -38,15 +39,15 @@ pub struct ProductDescription<'a> {
     /// Product Generation Time, sec since midnight
     pub product_time: i32,
     ///  Product dependent parameters 1 and 2 TABLE V (4s)
-    pub halfwords_27_28: &'a [u8],
+    pub halfwords_27_28: Vec<u8>,
     /// Elevation number within volume scan
     pub elevation_num: i16,
     ///  Product dependent parameter 3 --- PRODUCT DEPENDENT PARAMETERS 1 AND 2 (SEE TABLE V) (2s)
-    pub halfwords_30: &'a [u8],
+    pub halfwords_30: Vec<u8>,
     ///  Data to determine threshold level values --- PRODUCT DEPENDENT (SEE NOTE 1) (32s)
-    pub threshold_data: &'a [u8],
+    pub threshold_data: Vec<u8>,
     ///  Product dependent parameters 4-10 --- PRODUCT DEPENDENT PARAMETERS 4 THROUGH 10 (SEE TABLE V, NOTE 3) (14s)
-    pub halfwords_47_53: &'a [u8],
+    pub halfwords_47_53: Vec<u8>,
     /// Version, 0
     pub version: u8,
     /// 1 = Spot blank ON, 0 = Blanking OFF
@@ -111,11 +112,11 @@ pub fn product_description(input: &[u8]) -> IResult<&[u8], ProductDescription> {
             vol_scan_time,
             product_date,
             product_time,
-            halfwords_27_28,
+            halfwords_27_28: halfwords_27_28.to_vec(),
             elevation_num,
-            halfwords_30,
-            threshold_data,
-            halfwords_47_53,
+            halfwords_30: halfwords_30.to_vec(),
+            threshold_data: threshold_data.to_vec(),
+            halfwords_47_53: halfwords_47_53.to_vec(),
             version: version[0],
             spot_blank: spot_blank[0],
             offset_symbology,

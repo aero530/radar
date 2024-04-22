@@ -47,3 +47,15 @@ def _int16_to_float16(val):
     else:
         return (-1) ** sign * 2 ** (exponent - 16) * (1 + fraction / 2**10.0)
 ```
+
+
+**Figure 3-6. Graphic Product Message (Page 3-21)**
+| Data format | |
+| -- | -- |
+| MESSAGE HEADER BLOCK | (see Figure 3-3) |
+| PRODUCT DESCRIPTION BLOCK (1) | (see Sheet 2, 6, 7) |
+| PRODUCT SYMBOLOGY BLOCK (1) | (see Sheet 3, 8) |
+| GRAPHIC ALPHANUMERIC BLOCK (1) | (see Sheet 4, 9) |
+| TABULAR ALPHANUMERIC BLOCK (1) | (see Sheet 5, 10) |
+
+(1) All blocks need not be used. Any blocks that are used must remain in the order shown above.

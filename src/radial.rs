@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use nom::{
     number::complete::i16 as nom_i16,
     number::Endianness::Big,
@@ -9,6 +10,7 @@ use nom::{
 /// and
 /// Radial Data Packet - Packet Code AF1F
 /// Figure 3-10 (Sheet 1 and 2), page 3-113
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct RadialPacketHeader {
     /// Packet Code, Type 16
     pub packet_code: i16,
@@ -56,7 +58,7 @@ pub fn radial_packet_header(input: &[u8]) -> IResult<&[u8], RadialPacketHeader> 
 }
 
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct RadialHeader {
     /// Number of bytes in the radial.
     pub num_bytes: i16,
@@ -82,13 +84,13 @@ pub fn radial_header(input: &[u8]) -> IResult<&[u8], RadialHeader> {
     ))
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct Radial {
     pub header: RadialHeader,
     pub data: RadialData,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum RadialData {
     Digital(Vec<u8>),
     AF1F(Vec<RunLevelEncoding>)
@@ -100,7 +102,7 @@ impl Default for RadialData {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct RunLevelEncoding {
     pub run: u8,
     pub color: u8,

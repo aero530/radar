@@ -1,11 +1,6 @@
-
-
+use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
-
-use nom::{
-    IResult, *
-};
-
+use nom::{IResult, *};
 
 use super::MessageCode;
 
@@ -13,7 +8,7 @@ use super::MessageCode;
 /// Graphic Product Message: Message Header Block
 /// 18 bytes, 9 halfwords
 /// Figure 3-3, page 3-7.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct MessageHeader {
     /// message code
     pub code: MessageCode,

@@ -4,8 +4,8 @@
 extern crate num_derive;
 
 
-
-use std::{io::Read, path::PathBuf};
+use serde::{Deserialize, Serialize};
+use std::{fs::File, io::{Read, Write}, path::PathBuf};
 
 
 use bzip2::bufread::BzDecoder;
@@ -34,11 +34,11 @@ mod text_header;
 use text_header::{text_header, TextHeader};
 
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Radar<'a> {
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Radar {
     text_header: TextHeader,
     message_header: MessageHeader,
-    product_description: ProductDescription<'a>,
+    product_description: ProductDescription,
     symbology_header: SymbologyHeader,
     symbology: Symbology,
 }
@@ -46,7 +46,7 @@ pub struct Radar<'a> {
 
 
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Symbology {
     radials: Vec<Radial>,
 }
@@ -113,7 +113,7 @@ fn symbology_block_generic(input: &[u8]) -> IResult<&[u8], Symbology> {
     // Ok((input, Symbology{a:0}))
 }
 
-fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar<'a>> {
+fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar> {
 
     // Text header
     let (input, text_header) = text_header(input)?;
@@ -237,6 +237,13 @@ fn main() {
             // warn!("Unmatched {:?}", leftover);
             info!("{:?}", value);
             warn!("{:?}", leftover);
+            
+            // write to file
+            let filepath: &str = "out.json";
+            let mut file = File::create(filepath).expect("write error");
+            // let _ = file.write_all(self.to_string()?.as_bytes());
+            let s = serde_json::to_string(&value).unwrap();
+            let _ = file.write_all(s.as_bytes());
         }
         Err(e) => error!("{:?}", e),
     }

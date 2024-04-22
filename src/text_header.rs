@@ -1,10 +1,11 @@
+use serde::{Deserialize, Serialize};
 use nom::{
     bytes::complete::{tag, take},
     character::complete::digit0,
     IResult, 
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct TextHeader {
     pub xx: usize,
     pub location: String,

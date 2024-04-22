@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use nom::{
     number::complete::{i16 as nom_i16, i32 as nom_i32},
     number::Endianness::Big,
@@ -8,7 +9,7 @@ use nom::{
 /// Description
 /// 16 byte header
 /// Figure 3-6 (Sheet 8), pages 3-40
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct SymbologyHeader {
     /// Delineate blocks, -1
     divider: i16,
