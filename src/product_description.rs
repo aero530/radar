@@ -9,7 +9,7 @@ use nom::{
 /// Graphic Product Message: Product Description Block
 /// Description: section 3.3.1.1, page 3-3
 /// 102 bytes, 51 halfwords (halfwords 10-60)
-/// Figure 3-6, pages 3-21 and 3-25
+/// Figure 3-6 Sheet 6, pages 3-25 through 3-26
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct ProductDescription {
     /// Delineate blocks, -1
@@ -38,15 +38,15 @@ pub struct ProductDescription {
     pub product_date: i16,
     /// Product Generation Time, sec since midnight
     pub product_time: i32,
-    ///  Product dependent parameters 1 and 2 TABLE V (4s)
+    ///  Product dependent parameters 1 and 2 TABLE V (length 4s)
     pub halfwords_27_28: Vec<u8>,
     /// Elevation number within volume scan
     pub elevation_num: i16,
-    ///  Product dependent parameter 3 --- PRODUCT DEPENDENT PARAMETERS 1 AND 2 (SEE TABLE V) (2s)
+    ///  Product dependent parameter 3 --- PRODUCT DEPENDENT PARAMETERS 1 AND 2 (SEE TABLE V) (length 2s)
     pub halfwords_30: Vec<u8>,
-    ///  Data to determine threshold level values --- PRODUCT DEPENDENT (SEE NOTE 1) (32s)
+    ///  Data to determine threshold level values --- PRODUCT DEPENDENT (SEE NOTE 1) (length 32s)
     pub threshold_data: Vec<u8>,
-    ///  Product dependent parameters 4-10 --- PRODUCT DEPENDENT PARAMETERS 4 THROUGH 10 (SEE TABLE V, NOTE 3) (14s)
+    ///  Product dependent parameters 4-10 --- PRODUCT DEPENDENT PARAMETERS 4 THROUGH 10 (SEE TABLE V, NOTE 3) (length 14s)
     pub halfwords_47_53: Vec<u8>,
     /// Version, 0
     pub version: u8,

@@ -3,14 +3,12 @@
 #[macro_use]
 extern crate num_derive;
 
-
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::{Read, Write}, path::PathBuf};
 
-
 use bzip2::bufread::BzDecoder;
 use nom::{
-    bytes::complete::take, combinator::peek, multi::count, IResult, *
+    combinator::peek, IResult, *
 };
 use tracing::{debug, error, info, trace, warn, Level};
 use tracing_subscriber::filter::EnvFilter;
@@ -24,14 +22,12 @@ use message_header::{message_header, MessageHeader};
 mod product_description;
 use product_description::{product_description, ProductDescription};
 
-mod radial;
-use radial::{radial_header, radial_packet_header, Radial, RadialData, RadialPacketHeader, RunLevelEncoding};
-
-mod symbology_header;
-use symbology_header::{symbology_header, SymbologyHeader};
+mod product_symbology;
+use product_symbology::{symbology_header, symbology_block, symbology_block_generic, Symbology, SymbologyHeader};
 
 mod text_header;
 use text_header::{text_header, TextHeader};
+
 
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -46,72 +42,6 @@ pub struct Radar {
 
 
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct Symbology {
-    radials: Vec<Radial>,
-}
-
-// fn radial_block(input: (PacketCode, usize, &[u8]) ) -> IResult<(PacketCode, usize, &[u8]), Radial> {
-fn radial_block(input: &[u8], packet_code: PacketCode, num_bins: usize) -> IResult<&[u8], Radial> {
-    // let (packet_code, num_bins, input) = input;
-    let (input, temp_header) = radial_header(input)?;
-    let (input, radial) = match packet_code {
-        PacketCode::Radial => {
-            // Figure 3-11c. Digital Radial Data Array Packet - Packet Code 16
-            // page 3-95
-            let (input, temp_data) = take(num_bins)(input)?;
-            Ok((input, Radial { 
-                header: temp_header, 
-                data: RadialData::Digital(temp_data.to_vec()),
-            }))
-        },
-        PacketCode::AF1F => {
-            // decode run length encoding
-            let rle_size = temp_header.num_bytes as usize * 2;
-            let (input, rle) = take(rle_size)(input)?;
-            // run code then color (4bit ints)
-            let data : Vec<RunLevelEncoding>= rle.iter().map(|x| RunLevelEncoding{run: x >> 4, color: x & 0b00001111}).collect();
-            Ok((input, Radial { 
-                header: temp_header, 
-                data: RadialData::AF1F(data),
-            }))
-        },
-        _ => {
-            Ok((input, Radial::default()))
-            // panic!("How did this happen?")
-        }
-    }?;
-    
-    // Ok(((packet_code, num_bins, input), radial))
-    Ok((input, radial))
-}
-
-fn symbology_block(input: &[u8], packet_code: PacketCode) -> IResult<&[u8], Symbology> {
-    let (input, packet_header) = radial_packet_header(input)?;
-
-    let mut num_bins = packet_header.num_bins as usize;
-    let num_radials = packet_header.num_radials as usize;
-
-    let (input, temp_header) = peek(radial_header)(input)?;
-
-    match packet_code {
-        PacketCode::Radial => {
-            if temp_header.num_bytes as usize != num_bins {
-                num_bins = temp_header.num_bytes as usize;
-            }
-        },
-        _ => {}
-    }
-
-    let (input, radials) = count(|i| radial_block(i, packet_code,num_bins), num_radials)(input)?;
-
-    Ok((input, Symbology{radials}))
-}
-
-fn symbology_block_generic(input: &[u8]) -> IResult<&[u8], Symbology> {
-    todo!();
-    // Ok((input, Symbology{a:0}))
-}
 
 fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar> {
 
@@ -157,13 +87,14 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
         return Err(nom::Err::Failure(e));
     }
 
-    println!("{:?}", packet_code);
+    info!("{:?}", packet_code);
+
 
     let (input, symbology) = match packet_code {
-        PacketCode::Generic => {
+        PacketCode::GenericData28 => {
             symbology_block_generic(input)?
         },
-        PacketCode::Radial | PacketCode::AF1F => {
+        PacketCode::RadialDataAF1F | PacketCode::DigitalRadialDataArray => {
             symbology_block(input, packet_code)?
         },
         _ => {
@@ -172,11 +103,13 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
             return Err(nom::Err::Failure(e));
         }
     };
-    //
-    //
-    // Read data
-    //
-    //
+
+    // //
+    // //
+    // todo!("Should run sym block for number of layers in sym header");
+    // //
+    // //
+
 
     
     Ok((
@@ -219,33 +152,34 @@ fn main() {
 
     let file_after_headers = file.split_off(150);
 
-
     // Uncompress symbology block if necessary
     let mut decomp_vec : Vec<u8> = Vec::new();
     if file_after_headers[0..1] == "BZ".as_bytes()[0..1] {
         let mut decoder = BzDecoder::new(file_after_headers.as_slice());
         let q = decoder.read_to_end(&mut decomp_vec);
-
         info!("Decompression {:?}", q);
-        
-        info!("{:?}", decomp_vec);
     };    
     
 
     match parse(&file, &decomp_vec ) {
         Ok((leftover, value)) => {
-            // warn!("Unmatched {:?}", leftover);
-            info!("{:?}", value);
-            warn!("{:?}", leftover);
-            
+
             // write to file
             let filepath: &str = "out.json";
             let mut file = File::create(filepath).expect("write error");
-            // let _ = file.write_all(self.to_string()?.as_bytes());
             let s = serde_json::to_string(&value).unwrap();
             let _ = file.write_all(s.as_bytes());
+
+            
+            let filepath: &str = "out_leftover.json";
+            let mut file = File::create(filepath).expect("write error");
+            let s = serde_json::to_string(&leftover).unwrap();
+            let _ = file.write_all(s.as_bytes());
         }
-        Err(e) => error!("{:?}", e),
+        Err(_e) => {
+            //   error!("{:?}", e)
+            error!("Something didnt work")
+        },
     }
 }
 

@@ -4,6 +4,7 @@ use nom::{
     number::Endianness::Big,
     IResult,
 };
+use tracing::error;
 
 /// Graphic Product Message: Product Symbology Block
 /// Description
@@ -13,7 +14,7 @@ use nom::{
 pub struct SymbologyHeader {
     /// Delineate blocks, -1
     divider: i16,
-    /// Block ID, 1
+    /// Block ID, (Always should be 1)
     id: i16,
     /// Length of block in bytes
     block_length: i32,
@@ -33,6 +34,11 @@ pub fn symbology_header(input: &[u8]) -> IResult<&[u8], SymbologyHeader> {
         
     let (input, divider) = nom_i16(Big)(input)?;
     let (input, id) = nom_i16(Big)(input)?;
+    if id as u8 !=  1 {
+        let e = nom::error::Error::new(input, nom::error::ErrorKind::Fail);
+        error!("Product symbology header should have ID=1 but found {}", id);
+        return Err(nom::Err::Failure(e));
+    }
     let (input, block_length) = nom_i32(Big)(input)?;
     let (input, layers) = nom_i16(Big)(input)?;
     let (input, layer_divider) = nom_i16(Big)(input)?;

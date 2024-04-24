@@ -258,15 +258,167 @@ impl MessageCode {
     }
 }
 
+
+
+/// Figure 3-7 through 3-14
+/// 
 #[derive(Serialize, Deserialize, Display, FromStr, PartialEq, Debug, Copy, Clone, Default)]
 #[derive(FromPrimitive, ToPrimitive)]
 pub enum PacketCode {
-    #[display("AF1F")]
-    AF1F = -20705,
-    #[display("Radial")]
-    Radial = 16,
+
+    /// Figure 3-7 Sheet 1 pg 3-81
+    #[display("Linked Vector")]
+    LinkedVector6 = 6,
+
+    /// Figure 3-7 Sheet 2,3 pg 3-81
+    #[display("Linked Vector")]
+    LinkedVector9 = 9,
+
+    /// Figure 3-8. (Sheet 1, 3) 
+    #[display("Unlinked Vector 7")]
+    UnlinkedVector7 = 7,
+    
+    /// Figure 3-8. (Sheet 2, 4) 
+    #[display("Unlinked Vector 10")]
+    UnlinkedVector10 = 10,
+    
+    /// Figure 3-8a (Sheet 1, 2) 0x0E03=3587
+    #[display("Contour Vector 0E03")]
+    ContourVector0E03 = 3587,
+    
+    /// Figure 3-8a (Sheet 1, 2) 0x0802=2050
+    #[display("Contour Vector 0802")]
+    ContourVector0802 = 2050,
+    
+    /// Figure 3-8a (Sheet 1, 3) 0x3501=13569
+    #[display("Contour Vector 3501")]
+    ContourVector3501 = 13569,
+    
+    /// Figure 3-8b. (Sheet 1, 4) 
+    #[display("Text and Special Symbol 1")]
+    TextAndSpecialSymbol1 = 1,
+    
+    /// Figure 3-8b. (Sheet 2) 
+    #[display("Text and Special Symbol 8")]
+    TextAndSpecialSymbol8 = 8,
+    
+    /// Figure 3-8b. (Sheet 3, 5) 
+    #[display("Text and Special Symbol 2")]
+    TextAndSpecialSymbol2 = 2,
+    
+    /// Figure 3-9. (Sheet 2, 3) 0x0E23=3619
+    #[display("Map Message 0E23")]
+    MapMessage0E23 = 3619,
+    
+    /// Figure 3-9. (Sheet 2, 3) 0x4E00=19968
+    #[display("Map Message 4E00")]
+    MapMessage4E00 = 19968,
+    
+    /// Figure 3-9. (Sheet 2, 3) 0x3521=13601
+    #[display("Map Message 3521")]
+    MapMessage3521 = 13601,
+    
+    /// Figure 3-9. (Sheet 2, 3) 0x4E01=19969
+    #[display("Map Message 4E01")]
+    MapMessage4E01 = 19969,
+    
+    /// Figure 3-10. (Sheet 1, 2) 0xAF1F=-20705
+    #[display("Radial Data (16 Data Levels)")]
+    RadialDataAF1F = -20705,
+    
+    /// Figure 3-11. (Sheet 1, 2) 0xBA0F=-17905
+    #[display("Raster Data BA0F")]
+    RasterDataBA0F = -17905,
+    
+    /// Figure 3-11. (Sheet 1, 2) 0xBA07=-17913
+    #[display("Raster Data BA07")]
+    RasterDataBA07 = -17913,
+    
+    /// Figure 3-11a. (Sheet 1, 2) 
+    #[display("Digital Precipitation Data Array")]
+    DigitalPrecipitationDataArray = 17,
+    
+    /// Figure 3-11b. (Sheet 1, 2) 
+    #[display("Precipitation Rate Data Array")]
+    PrecipitationRateDataArray = 18,
+    
+    /// Figure 3-11c. (Sheet 1, 2) 
+    #[display("Digital Radial Data Array")]
+    DigitalRadialDataArray = 16,
+    
+    /// Figure 3-12. 
+    #[display("Vector Arrow Data")]
+    VectorArrowData = 5,
+    
+    /// Figure 3-13. 
+    #[display("Wind Barb Data")]
+    WindBarbData = 4,
+    
+    /// Figure 3-14. (Sheet 1, 3) 
+    #[display("Special Graphic Symbol 3")]
+    SpecialGraphicSymbol3 = 3,
+    
+    /// Figure 3-14. (Sheet 1, 3) 
+    #[display("Special Graphic Symbol 11")]
+    SpecialGraphicSymbol11 = 11,
+    
+    /// Figure 3-14. (Sheet 1, 3) 
+    #[display("Special Graphic Symbol 12")]
+    SpecialGraphicSymbol12 = 12,
+    
+    /// Figure 3-14. (Sheet 1, 3) 
+    #[display("Special Graphic Symbol 13")]
+    SpecialGraphicSymbol13 = 13,
+    
+    /// Figure 3-14. (Sheet 1, 3) 
+    #[display("Special Graphic Symbol 14")]
+    SpecialGraphicSymbol14 = 14,
+    
+    /// Figure 3-14. (Sheet 2, 3) 
+    #[display("Special Graphic Symbol 15")]
+    SpecialGraphicSymbol15 = 15,
+    
+    /// Figure 3-14. (Sheet 2, 3) 
+    #[display("Special Graphic Symbol 19")]
+    SpecialGraphicSymbol19 = 19,
+    
+    /// Figure 3-14. (Sheet 2, 3) 
+    #[display("Special Graphic Symbol 23")]
+    SpecialGraphicSymbol23 = 23,
+    
+    /// Figure 3-14. (Sheet 2, 3) 
+    #[display("Special Graphic Symbol 24")]
+    SpecialGraphicSymbol24 = 24,
+    
+    /// Figure 3-14. (Sheet 2, 3) 
+    #[display("Special Graphic Symbol 25")]
+    SpecialGraphicSymbol25 = 25,
+    
+    /// Figure 3-14. (Sheet 3) 
+    #[display("Special Graphic Symbol 26")]
+    SpecialGraphicSymbol26 = 26,
+    
+    /// Figure 3-14. (Sheet 4) 
+    #[display("Special Graphic Symbol 20")]
+    SpecialGraphicSymbol20 = 20,
+    
+    /// Figure 3-15. (Sheet 1, 2) 
+    #[display("Cell Trend Data")]
+    CellTrendData = 21,
+    
+    /// Figure 3-15a. 
+    #[display("Cell Trend Volume Scan Times")]
+    CellTrendVolumeScanTimes = 22,
+    
+    /// Figure 3-15c (Sheet 1) 
     #[display("Generic Data")]
-    Generic = 28,
+    GenericData28 = 28,
+    
+    /// Figure 3-15c (Sheet 1) 
+    #[display("Generic Data")]
+    GenericData29 = 29,
+
+
     #[default]
     #[display("Other / Unknown")]
     Other = 0,
