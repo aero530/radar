@@ -11,8 +11,8 @@ use super::{radial_header, radial_packet_header, Radial, RadialData, RadialPacke
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Symbology {
-    packet_header: RadialPacketHeader,
-    radials: Vec<Radial>,
+    pub packet_header: RadialPacketHeader,
+    pub radials: Vec<Radial>,
 }
 
 // fn radial_block(input: (PacketCode, usize, &[u8]) ) -> IResult<(PacketCode, usize, &[u8]), Radial> {

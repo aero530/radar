@@ -28,7 +28,8 @@ use product_symbology::{symbology_header, symbology_block, symbology_block_gener
 mod text_header;
 use text_header::{text_header, TextHeader};
 
-
+mod plot;
+use plot::plot;
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Radar {
@@ -175,12 +176,16 @@ fn main() {
             let mut file = File::create(filepath).expect("write error");
             let s = serde_json::to_string(&leftover).unwrap();
             let _ = file.write_all(s.as_bytes());
+
+            let _ = plot(value);
         }
         Err(_e) => {
             //   error!("{:?}", e)
             error!("Something didnt work")
         },
     }
+
+    
 }
 
 
