@@ -1,6 +1,6 @@
 use plotters::prelude::*;
 use plotters::coord::types::RangedCoordf32;
-use tracing::debug;
+// use tracing::{debug, trace};
 
 use crate::product_symbology::RadialData;
 
@@ -13,7 +13,7 @@ pub fn plot(input: Radar) -> Result<(), Box<dyn std::error::Error>> {
     let logical_height = image_height as f32;
 
     let r_max = 350.0;
-    let n_bins = input.symbology.packet_header.num_bins as f32;
+    let n_bins = input.symbology_layers.first().unwrap().packet_header.num_bins as f32;
     // let n_radials = input.symbology.packet_header.num_radials as f32;
     // let range_scale = input.symbology.packet_header.range_scale;
 
@@ -57,10 +57,10 @@ pub fn plot(input: Radar) -> Result<(), Box<dyn std::error::Error>> {
 
     // root.draw(&wedge(50.5, 70.6))?;
 
-    input.symbology.radials.iter().for_each(|radial| {
+    input.symbology_layers.first().unwrap().radials.iter().for_each(|radial| {
         let angle = (270.0 + radial.header.angle_start as f32 / 10.0) * std::f32::consts::PI/180.0;
         let delta_angle = (radial.header.angle_delta as f32 / 10.0) * std::f32::consts::PI/180.0;
-        debug!("Angle {:?}", angle);
+        // trace!("Angle {:?}", angle);
         
         match &radial.data {
             RadialData::Digital(data) => {

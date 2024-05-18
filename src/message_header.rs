@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use nom::{IResult, *};
+use tracing::info;
 
 use super::MessageCode;
 
@@ -46,6 +47,7 @@ pub fn message_header(input: &[u8]) -> IResult<&[u8], MessageHeader> {
     let (input, dest) = number::complete::i16(nom::number::Endianness::Big)(input)?;
     let (input, nblocks) = number::complete::i16(nom::number::Endianness::Big)(input)?;
 
+    info!("{} product description blocks", nblocks-1);
     Ok((
         input,
         MessageHeader {

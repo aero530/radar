@@ -6,3 +6,6 @@ pub use symbology_header::{symbology_header, SymbologyHeader};
 
 mod symbology_block;
 pub use symbology_block::{symbology_block, symbology_block_generic, Symbology};
+
+mod symbology_layers;
+pub use symbology_layers::symbology_layers;

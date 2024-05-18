@@ -53,6 +53,7 @@ pub fn radial_block(input: &[u8], packet_code: PacketCode, num_bins: usize) -> I
     Ok((input, radial))
 }
 
+/// DigitalRadialDataArray
 pub fn symbology_block(input: &[u8], packet_code: PacketCode) -> IResult<&[u8], Symbology> {
     let (input, packet_header) = radial_packet_header(input)?;
 

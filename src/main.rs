@@ -7,14 +7,12 @@ use serde::{Deserialize, Serialize};
 use std::{fs::File, io::{Read, Write}, path::PathBuf};
 
 use bzip2::bufread::BzDecoder;
-use nom::{
-    combinator::peek, IResult, *
-};
+use nom::{error, IResult};
 use tracing::{debug, error, info, trace, warn, Level};
 use tracing_subscriber::filter::EnvFilter;
 
 mod codes;
-use codes::{MessageCode, PacketCode};
+use codes::MessageCode;
 
 mod message_header;
 use message_header::{message_header, MessageHeader};
@@ -23,7 +21,7 @@ mod product_description;
 use product_description::{product_description, ProductDescription};
 
 mod product_symbology;
-use product_symbology::{symbology_header, symbology_block, symbology_block_generic, Symbology, SymbologyHeader};
+use product_symbology::{symbology_header, symbology_layers, Symbology, SymbologyHeader};
 
 mod text_header;
 use text_header::{text_header, TextHeader};
@@ -37,11 +35,8 @@ pub struct Radar {
     message_header: MessageHeader,
     product_description: ProductDescription,
     symbology_header: SymbologyHeader,
-    symbology: Symbology,
+    symbology_layers: Vec<Symbology>,
 }
-
-
-
 
 
 fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar> {
@@ -71,6 +66,10 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
     }
 
 
+    if product_description.offset_symbology > 0 {
+        info!("Decoding symbology block");
+    }
+    // info!("Decoding symbology block");
     // Read and decode symbology header (check packet code)
     let (input, symbology_header) = if decomp_input.len()>0 {
         symbology_header(decomp_input)?
@@ -78,32 +77,16 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
         symbology_header(input)?
     };
 
-    // let (input, divider) = number::complete::i16(nom::number::Endianness::Big)(input)?;
-    let (_, pc) = peek(number::complete::i16(nom::number::Endianness::Big))(input)?;
-    
-    let packet_code = <PacketCode as num::FromPrimitive>::from_i16(pc).unwrap_or_default();
-    if !packet_code.is_supported_product() {
-        let e = nom::error::Error::new(input, error::ErrorKind::Fail);
-        error!("Packet Code is {:?} which is not supported", pc);
-        return Err(nom::Err::Failure(e));
+    let (input, symbology_layers) = nom::multi::count(symbology_layers, symbology_header.layers as usize)(input)?;
+
+
+
+    if product_description.offset_graphic > 0 {
+        warn!("Should decode graphic alphanumeric block");
     }
-
-    info!("{:?}", packet_code);
-
-
-    let (input, symbology) = match packet_code {
-        PacketCode::GenericData28 => {
-            symbology_block_generic(input)?
-        },
-        PacketCode::RadialDataAF1F | PacketCode::DigitalRadialDataArray => {
-            symbology_block(input, packet_code)?
-        },
-        _ => {
-            let e = nom::error::Error::new(input, error::ErrorKind::Fail);
-            error!("Packet Code is {:?} which is not supported", pc);
-            return Err(nom::Err::Failure(e));
-        }
-    };
+    if product_description.offset_tabular > 0 {
+        warn!("Should decode tabular alphanumeric block");
+    }
 
     // //
     // //
@@ -120,7 +103,7 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
             message_header,
             product_description,
             symbology_header,
-            symbology,
+            symbology_layers,
         },
     ))
 }

@@ -4,7 +4,7 @@ use nom::{
     number::Endianness::Big,
     IResult,
 };
-use tracing::error;
+use tracing::{error, info};
 
 /// Graphic Product Message: Product Symbology Block
 /// Description
@@ -13,17 +13,17 @@ use tracing::error;
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct SymbologyHeader {
     /// Delineate blocks, -1
-    divider: i16,
+    pub divider: i16,
     /// Block ID, (Always should be 1)
-    id: i16,
+    pub id: i16,
     /// Length of block in bytes
-    block_length: i32,
+    pub block_length: i32,
     /// Number of data layers
-    layers: i16,
+    pub layers: i16,
     /// Delineate data layers, -1
-    layer_divider: i16,
+    pub layer_divider: i16,
     /// Length of data layer in bytes
-    layer_length: i32,
+    pub layer_length: i32,
 }
 
 /// Graphic Product Message: Product Symbology Block
@@ -43,6 +43,20 @@ pub fn symbology_header(input: &[u8]) -> IResult<&[u8], SymbologyHeader> {
     let (input, layers) = nom_i16(Big)(input)?;
     let (input, layer_divider) = nom_i16(Big)(input)?;
     let (input, layer_length) = nom_i32(Big)(input)?;
+
+    if divider != -1 {
+        error!("Block divider error");
+    }
+
+    if id != 1 {
+        error!("Symbology header block ID error");
+    }
+
+    if layer_divider != -1 {
+        error!("Symbology header block layer divider error. Found {} but expected -1", layer_divider);
+    }
+    
+    info!("Symbology block is {} bytes. {} data layers. Data layers are {} bytes total.", block_length, layers, layer_length);
 
     Ok((
         input,

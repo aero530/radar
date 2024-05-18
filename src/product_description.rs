@@ -5,6 +5,7 @@ use nom::{
     number::complete::{i16 as nom_i16, i32 as nom_i32},
     number::Endianness::Big,
 };
+use tracing::{error, info};
 
 /// Graphic Product Message: Product Description Block
 /// Description: section 3.3.1.1, page 3-3
@@ -95,6 +96,14 @@ pub fn product_description(input: &[u8]) -> IResult<&[u8], ProductDescription> {
     // let (input, days) = nom_i16(Big)(input)?;
     // let (input, seconds) = nom_i32(Big)(input)?;
     // let date_time = DateTime::from_timestamp((days as i64)*24*60*60 + (seconds as i64), 0).unwrap_or_default();
+
+    if divider != -1 {
+        error!("Block divider error");
+    }
+
+    info!("Symbology located at {}", offset_symbology);
+    info!("Graphic located at {}", offset_graphic);
+    info!("Tabular located at {}", offset_tabular);
 
     Ok((
         input,
