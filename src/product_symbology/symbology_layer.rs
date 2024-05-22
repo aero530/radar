@@ -3,13 +3,20 @@ use nom::{
     number::complete::i16 as nom_i16,
     number::Endianness::Big,
 };
+use serde::{Deserialize, Serialize};
 use tracing::{error, info};
 
-use crate::{codes::PacketCode, product_symbology::{symbology_block, symbology_block_generic}};
+use crate::{codes::PacketCode, product_symbology::packet};
 
-use super::Symbology;
+use super::{Radial, RadialPacketHeader};
 
-pub fn symbology_layers(input: &[u8]) -> IResult<&[u8], Symbology> {
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Symbology {
+    pub packet_header: RadialPacketHeader,
+    pub radials: Vec<Radial>,
+}
+
+pub fn symbology_layer(input: &[u8]) -> IResult<&[u8], Symbology> {
     // If this is the first layer we will start right off with a packet code.  Other layers will have a layer divider first
     let (_, potential_divider) = peek(nom_i16(Big))(input)?;
     // If there was a layer divider then remove it and return the rest of the input
@@ -30,11 +37,11 @@ pub fn symbology_layers(input: &[u8]) -> IResult<&[u8], Symbology> {
     let (input, symbology) = match packet_code {
         PacketCode::GenericData28 => {
             info!("Generic Data 28");
-            symbology_block_generic(input)?
+            packet::generic(input)?
         },
         PacketCode::RadialDataAF1F | PacketCode::DigitalRadialDataArray => {
             info!("Digital Radial Data Array 16");
-            symbology_block(input, packet_code)?
+            packet::radial(input, packet_code)?
         },
         _ => {
             let e = nom::error::Error::new(input, error::ErrorKind::Fail);

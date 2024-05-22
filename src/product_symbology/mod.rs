@@ -1,11 +1,10 @@
-mod radial;
-pub use radial::{radial_header, radial_packet_header, Radial, RadialData, RadialPacketHeader, RunLevelEncoding};
+mod packet;
+pub use packet::*;
 
 mod symbology_header;
 pub use symbology_header::{symbology_header, SymbologyHeader};
 
-mod symbology_block;
-pub use symbology_block::{symbology_block, symbology_block_generic, Symbology};
+mod symbology_layer;
+pub use symbology_layer::{symbology_layer, Symbology};
 
-mod symbology_layers;
-pub use symbology_layers::symbology_layers;
+// Symbology data packets are described in FIGURES 3-7 THRU 3-14

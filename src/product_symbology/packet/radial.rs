@@ -1,9 +1,35 @@
 use serde::{Deserialize, Serialize};
 use nom::{
-    number::complete::i16 as nom_i16,
-    number::Endianness::Big,
-    IResult,
+    bytes::complete::take, combinator::peek, multi::count, number::{complete::i16 as nom_i16, Endianness::Big}, IResult
 };
+use tracing::{error, info};
+
+use crate::{codes::PacketCode, product_symbology::Symbology};
+
+
+/// DigitalRadialDataArray
+pub fn radial(input: &[u8], packet_code: PacketCode) -> IResult<&[u8], Symbology> {
+    let (input, packet_header) = packet_header(input)?;
+
+    let mut num_bins = packet_header.num_bins as usize;
+    let num_radials = packet_header.num_radials as usize;
+
+    let (input, temp_header) = peek(radial_header)(input)?;
+
+    match packet_code {
+        PacketCode::RadialDataAF1F => {
+            if temp_header.num_bytes as usize != num_bins {
+                num_bins = temp_header.num_bytes as usize;
+            }
+        },
+        _ => {}
+    }
+
+    info!("Reading {:?} radial blocks each with {:?} bins", num_radials, num_bins);
+
+    let (input, radials) = count(|i| data_block(i, packet_code, num_bins), num_radials)(input)?;
+    Ok((input, Symbology{packet_header, radials}))
+}
 
 /// Digital Radial Data Array Packet - Packet Code 16 (Sheet 2)
 /// Figure 3-11c (Sheet 1 and 2), page 3-120
@@ -33,7 +59,7 @@ pub struct RadialPacketHeader {
 /// and
 /// Radial Data Packet - Packet Code AF1F
 /// Figure 3-10 (Sheet 1 and 2), page 3-113
-pub fn radial_packet_header(input: &[u8]) -> IResult<&[u8], RadialPacketHeader> {
+fn packet_header(input: &[u8]) -> IResult<&[u8], RadialPacketHeader> {
     
     let (input, packet_code) = nom_i16(Big)(input)?;
     let (input, first_bin) = nom_i16(Big)(input)?;
@@ -58,6 +84,44 @@ pub fn radial_packet_header(input: &[u8]) -> IResult<&[u8], RadialPacketHeader> 
 }
 
 
+// fn radial_block(input: (PacketCode, usize, &[u8]) ) -> IResult<(PacketCode, usize, &[u8]), Radial> {
+fn data_block(input: &[u8], packet_code: PacketCode, num_bins: usize) -> IResult<&[u8], Radial> {
+    // let (packet_code, num_bins, input) = input;
+    let (input, temp_header) = radial_header(input)?;
+
+    let (input, radial) = match packet_code {
+        PacketCode::RadialDataAF1F => {
+            // decode run length encoding
+            let rle_size = temp_header.num_bytes as usize * 2;
+            let (input, rle) = take(rle_size)(input)?;
+            
+            // run code then color (4bit ints)
+            let data : Vec<RunLevelEncoding>= rle.iter().map(|x| RunLevelEncoding{run: x >> 4, color: x & 0b00001111}).collect();
+
+            Ok((input, Radial { 
+                header: temp_header,
+                data: RadialData::AF1F(data),
+            }))
+        },
+        PacketCode::DigitalRadialDataArray => {
+            // Figure 3-11c. Digital Radial Data Array Packet - Packet Code 16
+            // page 3-95
+            let (input, temp_data) = take(num_bins)(input)?;
+            Ok((input, Radial { 
+                header: temp_header, 
+                data: RadialData::Digital(temp_data.to_vec()),
+            }))
+        },
+        _ => {
+            error!("Trying to read radial block but found the wrong packet code type.");
+            Ok((input, Radial::default()))
+        }
+    }?;
+    
+    // Ok(((packet_code, num_bins, input), radial))
+    Ok((input, radial))
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct RadialHeader {
     /// Number of bytes in the radial.
@@ -68,7 +132,7 @@ pub struct RadialHeader {
     pub angle_delta: i16,
 }
 
-pub fn radial_header(input: &[u8]) -> IResult<&[u8], RadialHeader> {
+fn radial_header(input: &[u8]) -> IResult<&[u8], RadialHeader> {
     
     let (input, num_bytes) = nom_i16(Big)(input)?;
     let (input, angle_start) = nom_i16(Big)(input)?;

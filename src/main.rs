@@ -21,7 +21,7 @@ mod product_description;
 use product_description::{product_description, ProductDescription};
 
 mod product_symbology;
-use product_symbology::{symbology_header, symbology_layers, Symbology, SymbologyHeader};
+use product_symbology::{symbology_header, symbology_layer, Symbology, SymbologyHeader};
 
 mod text_header;
 use text_header::{text_header, TextHeader};
@@ -77,7 +77,7 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
         symbology_header(input)?
     };
 
-    let (input, symbology_layers) = nom::multi::count(symbology_layers, symbology_header.layers as usize)(input)?;
+    let (input, symbology_layers) = nom::multi::count(symbology_layer, symbology_header.layers as usize)(input)?;
 
 
 
