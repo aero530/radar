@@ -1,23 +1,16 @@
-use nom::{
-    combinator::peek, multi::count, IResult
-};
-use tracing::info;
+
+
 
 mod radial;
-pub use radial::{
-    radial,
-    Radial,
-    RadialData,
-    RadialPacketHeader,
-    RunLevelEncoding,
-};
+pub use radial::{radial_data_af1f, RadialPacket};
 
-use crate::codes::PacketCode;
-
-use super::Symbology;
+mod digital_radial;
+pub use digital_radial::{digital_radial_data_array, DigitalRadialPacket};
 
 
-pub fn generic(_input: &[u8]) -> IResult<&[u8], Symbology> {
-    todo!();
-    // Ok((input, Symbology{a:0}))
+
+use nom::IResult;
+use super::SymPacketData;
+pub fn generic_data28(input: &[u8]) -> IResult<&[u8], SymPacketData> {
+    Ok((input, SymPacketData::GenericData28(())))
 }

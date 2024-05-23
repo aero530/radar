@@ -294,7 +294,7 @@ pub enum PacketCode {
     #[display("Contour Vector 3501")]
     ContourVector3501 = 13569,
     
-    /// Figure 3-8b. (Sheet 1, 4) 
+    /// Figure 3-8b. (Sheet 1, 4) page 3-88
     #[display("Text and Special Symbol 1")]
     TextAndSpecialSymbol1 = 1,
     
@@ -423,7 +423,6 @@ pub enum PacketCode {
     #[display("Other / Unknown")]
     Other = 0,
 }
-
 
 
 impl PacketCode {

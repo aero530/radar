@@ -21,7 +21,13 @@ mod product_description;
 use product_description::{product_description, ProductDescription};
 
 mod product_symbology;
-use product_symbology::{symbology_header, symbology_layer, Symbology, SymbologyHeader};
+use product_symbology::{symbology, SymbologyBlock};
+
+mod graphic_alphanumeric;
+use graphic_alphanumeric::GraphicBlock;
+
+mod tabular_alphanumeric;
+use tabular_alphanumeric::TabularBlock;
 
 mod text_header;
 use text_header::{text_header, TextHeader};
@@ -34,19 +40,23 @@ pub struct Radar {
     text_header: TextHeader,
     message_header: MessageHeader,
     product_description: ProductDescription,
-    symbology_header: SymbologyHeader,
-    symbology_layers: Vec<Symbology>,
+    symbology: Option<SymbologyBlock>,
+    graphic: Option<GraphicBlock>,
+    tabular: Option<TabularBlock>,
 }
 
 
-fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar> {
 
+fn parse<'a>(header_section: &'a [u8], remaining_file: &'a [u8]) -> IResult<&'a [u8], Radar> {
+    info!("File is {:?} bytes.", header_section.len());
+    info!("Decode is {:?} bytes.", remaining_file.len());
+    
     // Text header
-    let (input, text_header) = text_header(input)?;
+    let (input, text_header) = text_header(header_section)?;
 
     // Read and decode 18 byte Message Header Block
     let (input, message_header) = message_header(input)?;
-        
+
     // fail if code is not in supported products list
     if !message_header.code.is_supported_product() {
         let e = nom::error::Error::new(input, error::ErrorKind::Fail);
@@ -57,6 +67,8 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
     // Read and decode 102 byte Product Description Block
     let (input, product_description) = product_description(input)?;
 
+    info!("{:?}", product_description);
+
     // Check product version number
     // if there is a supported version of this product type BUT (and) the product version is greater than the supported version
     if message_header.code.supported_version().is_some_and(|supported_version| product_description.version > supported_version) {
@@ -66,20 +78,13 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
     }
 
 
-    if product_description.offset_symbology > 0 {
-        info!("Decoding symbology block");
-    }
-    // info!("Decoding symbology block");
-    // Read and decode symbology header (check packet code)
-    let (input, symbology_header) = if decomp_input.len()>0 {
-        symbology_header(decomp_input)?
+    let (input, symbology) = if product_description.offset_symbology > 0 {
+        let (input, symbology) = symbology(remaining_file)?;
+        (input, Some(symbology)) 
     } else {
-        symbology_header(input)?
+        (remaining_file, None)
     };
-
-    let (input, symbology_layers) = nom::multi::count(symbology_layer, symbology_header.layers as usize)(input)?;
-
-
+    
 
     if product_description.offset_graphic > 0 {
         warn!("Should decode graphic alphanumeric block");
@@ -88,22 +93,15 @@ fn parse<'a>(input: &'a [u8], decomp_input: &'a [u8]) -> IResult<&'a [u8], Radar
         warn!("Should decode tabular alphanumeric block");
     }
 
-    // //
-    // //
-    // todo!("Should run sym block for number of layers in sym header");
-    // //
-    // //
-
-
-    
     Ok((
         input,
         Radar {
             text_header,
             message_header,
             product_description,
-            symbology_header,
-            symbology_layers,
+            symbology,
+            graphic: None,
+            tabular: None,
         },
     ))
 }
@@ -142,10 +140,13 @@ fn main() {
         let mut decoder = BzDecoder::new(file_after_headers.as_slice());
         let q = decoder.read_to_end(&mut decomp_vec);
         info!("Decompression {:?}", q);
-    };    
+    } else {
+        // combine file after header back on to file???
+        decomp_vec = file_after_headers;
+    };
     
-
-    match parse(&file, &decomp_vec ) {
+    info!("File is {:?} bytes.", file.len());
+    match parse(&file, &decomp_vec) {
         Ok((leftover, value)) => {
 
             // write to file
@@ -160,15 +161,13 @@ fn main() {
             let s = serde_json::to_string(&leftover).unwrap();
             let _ = file.write_all(s.as_bytes());
 
-            let _ = plot(value);
+            let _ = plot(value.symbology.unwrap());
         }
-        Err(_e) => {
-            //   error!("{:?}", e)
+        Err(e) => {
+            error!("{:?}", e);
             error!("Something didnt work")
         },
     }
-
-    
 }
 
 

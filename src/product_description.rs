@@ -62,11 +62,14 @@ pub struct ProductDescription {
 }
 
 
-/// Graphic Product Message: Message Header Block
-/// 18 bytes, 9 halfwords
-/// Figure 3-3, page 3-7.
+/// Graphic Product Message: Product Description Block
+/// 51 halfwords
+/// Figure 3-6 Sheet 2, 6, 7, page 3-24 to 3-26.
 pub fn product_description(input: &[u8]) -> IResult<&[u8], ProductDescription> {
     let (input, divider) = nom_i16(Big)(input)?; //: i16,
+    if divider != -1 {
+        error!("Block divider error");
+    }
     let (input, latitude) = nom_i32(Big)(input)?; //: i32,
     let (input, longitude) = nom_i32(Big)(input)?; //: i32,
     let (input, height) = nom_i16(Big)(input)?; //: i16,
@@ -97,9 +100,7 @@ pub fn product_description(input: &[u8]) -> IResult<&[u8], ProductDescription> {
     // let (input, seconds) = nom_i32(Big)(input)?;
     // let date_time = DateTime::from_timestamp((days as i64)*24*60*60 + (seconds as i64), 0).unwrap_or_default();
 
-    if divider != -1 {
-        error!("Block divider error");
-    }
+
 
     info!("Symbology located at {}", offset_symbology);
     info!("Graphic located at {}", offset_graphic);
