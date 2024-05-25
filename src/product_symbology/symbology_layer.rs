@@ -1,14 +1,15 @@
 use nom::{
-    combinator::peek, error, IResult,
+    combinator::peek, IResult,
     number::complete::{i16 as nom_i16, i32 as nom_i32},
     number::Endianness::Big,
 };
-use packet::*;
+
 use tracing::{debug, error, info,};
 
-use crate::{codes::PacketCode, product_symbology::packet};
+use crate::codes::PacketCode;
 
-use super::SymPacketData;
+use super::{SymPacketData, packet::*};
+
 
 
 pub fn symbology_layer(input: &[u8]) -> IResult<&[u8], SymPacketData> {
@@ -24,11 +25,11 @@ pub fn symbology_layer(input: &[u8]) -> IResult<&[u8], SymPacketData> {
     let (_, packet_code_int) = peek(nom_i16(Big))(input)?;
     
     let packet_code = <PacketCode as num::FromPrimitive>::from_i16(packet_code_int).unwrap_or_default();
-    if !packet_code.is_supported_product() {
-        let e = nom::error::Error::new(input, error::ErrorKind::Fail);
-        error!("Packet Code is {:?} ({:?}) which is not supported", packet_code, packet_code_int);
-        return Err(nom::Err::Failure(e));
-    }
+    // if !packet_code.is_supported_product() {
+    //     let e = nom::error::Error::new(input, error::ErrorKind::Fail);
+    //     error!("Packet Code is {:?} ({:?}) which is not supported", packet_code, packet_code_int);
+    //     return Err(nom::Err::Failure(e));
+    // }
 
     debug!("Packet Code {:?}", packet_code);
 
@@ -40,9 +41,9 @@ pub fn symbology_layer(input: &[u8]) -> IResult<&[u8], SymPacketData> {
         PacketCode::ContourVector0E03 => todo!(),
         PacketCode::ContourVector0802 => todo!(),
         PacketCode::ContourVector3501 => todo!(),
-        PacketCode::TextAndSpecialSymbol1 => todo!(),
-        PacketCode::TextAndSpecialSymbol8 => todo!(),
-        PacketCode::TextAndSpecialSymbol2 => todo!(),
+        PacketCode::TextAndSpecialSymbol1 => text_and_symbol(input),
+        PacketCode::TextAndSpecialSymbol8 => text_and_symbol(input),
+        PacketCode::TextAndSpecialSymbol2 => text_and_symbol(input),
         PacketCode::MapMessage0E23 => todo!(),
         PacketCode::MapMessage4E00 => todo!(),
         PacketCode::MapMessage3521 => todo!(),

@@ -2,15 +2,15 @@ use plotters::prelude::*;
 use plotters::coord::types::RangedCoordf32;
 // use tracing::{debug, trace};
 
-use crate::product_symbology::{SymPacketData, SymbologyBlock};
+use crate::{codes::MessageCode, product_symbology::{SymPacketData, SymbologyBlock}};
 
-pub fn plot(input: SymbologyBlock) -> Result<(), Box<dyn std::error::Error>> {
-    let image_width = 800;
-    let image_height = 800;
+pub fn plot(input: SymbologyBlock, message_code: MessageCode) -> Result<(), Box<dyn std::error::Error>> {
+    let image_width = 1200;
+    let image_height = 1200;
     let logical_width = image_width as f32;
     let logical_height = image_height as f32;
 
-    let r_max = 350.0;
+    let r_max = 550.0;
     let n_bins = input.layers.first().unwrap().num_bins() as f32;
     // let n_radials = input.symbology.packet_header.num_radials as f32;
     // let range_scale = input.symbology.packet_header.range_scale;
@@ -64,32 +64,38 @@ pub fn plot(input: SymbologyBlock) -> Result<(), Box<dyn std::error::Error>> {
                 let delta_angle = (radial.header.angle_delta as f32 / 10.0) * std::f32::consts::PI/180.0;
                 // trace!("Angle {:?}", angle);
                 
-                // radial.data.iter().enumerate().for_each(|(index, value)| {
-                //     let radius_inner = (index as f32)/n_bins * r_max;
-                //     let radius_outer = (index as f32+1.0)/n_bins * r_max;
-                //     let p1 = (
-                //         radius_inner*angle.cos()+xc, 
-                //         radius_inner*angle.sin()+yc
-                //     );
-                //     let p2 = (
-                //         radius_inner*(angle+delta_angle).cos()+xc, 
-                //         radius_inner*(angle+delta_angle).sin()+yc
-                //     );
-                //     let p3 = (
-                //         radius_outer*(angle+delta_angle).cos()+xc, 
-                //         radius_outer*(angle+delta_angle).sin()+yc
-                //     );
-                //     let p4 = (
-                //         radius_outer*angle.cos()+xc, 
-                //         radius_outer*angle.sin()+yc
-                //     );
+                let mut starting_index = 0;
+                radial.data.iter().for_each(|value| {
+                    let inner_index = starting_index;
+                    let outer_index = inner_index + value.run;
+                    starting_index = outer_index;
+
+                    let radius_inner = (inner_index as f32)/n_bins * r_max;
+                    let radius_outer = (outer_index as f32)/n_bins * r_max;
+
+                    let p1 = (
+                        radius_inner*angle.cos()+xc, 
+                        radius_inner*angle.sin()+yc
+                    );
+                    let p2 = (
+                        radius_inner*(angle+delta_angle).cos()+xc, 
+                        radius_inner*(angle+delta_angle).sin()+yc
+                    );
+                    let p3 = (
+                        radius_outer*(angle+delta_angle).cos()+xc, 
+                        radius_outer*(angle+delta_angle).sin()+yc
+                    );
+                    let p4 = (
+                        radius_outer*angle.cos()+xc, 
+                        radius_outer*angle.sin()+yc
+                    );
                     
-                //     let points = vec![p1, p2, p3, p4];
-                //     let _ = root.draw(&Polygon::new(
-                //         points,
-                //         Into::<ShapeStyle>::into(HSLColor(*value as f64 / 256.0, 0.5, 0.5)).filled(),
-                //     ));
-                // });
+                    let points = vec![p1, p2, p3, p4];
+                    let _ = root.draw(&Polygon::new(
+                        points,
+                        Into::<ShapeStyle>::into(message_code.color_code(value.color)).filled(),
+                    ));
+                });
 
             });
         },
@@ -98,9 +104,7 @@ pub fn plot(input: SymbologyBlock) -> Result<(), Box<dyn std::error::Error>> {
                 let angle = (270.0 + radial.header.angle_start as f32 / 10.0) * std::f32::consts::PI/180.0;
                 let delta_angle = (radial.header.angle_delta as f32 / 10.0) * std::f32::consts::PI/180.0;
                 // trace!("Angle {:?}", angle);
-                
-                
-                   
+
                 radial.data.iter().enumerate().for_each(|(index, value)| {
 
                     let radius_inner = (index as f32)/n_bins * r_max;

@@ -1,5 +1,7 @@
 use parse_display::{Display, FromStr};
+use plotters::style::RGBColor;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 
 /// TABLE II NEXRAD MESSAGE CODE DEFINITIONS
 /// TABLE III MESSAGE CODES FOR PRODUCTS
@@ -254,7 +256,157 @@ impl MessageCode {
             186 => Some(0),
             _ => None,
         }
+    }
 
+    pub fn color_code(&self, code: u8) -> RGBColor {
+        match self {
+            
+            MessageCode::StormTotalSnowDepth => {
+                // Code	SSW_Display_Inches	SSW_Range_Inches SSD_Range_Inches	SSD_Display_Inches	Code	Color
+                // 0	ND	in=0.0	ND	in=0.0	(00 00 00)	black
+                // 1	>0.00	0.0<in<0.05	>0.00	0.0<in<0.5	(AA AA AA)	gray
+                // 2	0.05	0.05<in<0.10	0.5	0.5<in<1.0	(76 76 76)	dark gray
+                // 3	0.10	0.10<in<0.15	1.0	1.0<in<2.0	(00 FF FF)	cyan
+                // 4	0.15	0.15<in<0.20	2.0	2.0<in<3.0	(00 AF AF)	dark cyan
+                // 5	0.20	0.20<in<0.25	3.0	3.0<in<4.0	(00 FF 00)	green
+                // 6	0.25	0.25<in<0.30	4.0	4.0<in<5.0	(00 8F 00)	dark green
+                // 7	0.30	0.30<in<0.40	5.0	5.0<in<6.0	(FF 00 FF)	magenta
+                // 8	0.40	0.40<in<0.50	6.0	6.0<in<8.0	(AF 32 7D)	dark magenta
+                // 9	0.50	0.50<in<0.75	8.0	8.0<in<10.0	(00 00 FF)	blue
+                // A	0.75	0.75<in<1.00	10.0	10.0<in<12.0	(32 00 96)	dark blue
+                // B	1.00	1.00<in<1.25	12.0	12.0<in<15.0	(FF FF 00)	yellow
+                // C	1.25	1.25<in<1.50	15.0	15.0<in<20.0	(FF AA 00)	orange
+                // D	1.50	1.50<in<2.00	20.0	20.0<in<25.0	(FF 00 00)	bright red
+                // E	2.00	2.00<in<2.50	25.0	25.0<in<30.0	(AE 00 00)	dark red
+                // F	2.50	2.50>in	30	30.0>in	(FF FF FF)	white
+                match code {
+                    0 => RGBColor(0x00, 0x00, 0x00),
+                    1 => RGBColor(0xAA, 0xAA, 0xAA),
+                    2 => RGBColor(0x76, 0x76, 0x76),
+                    3 => RGBColor(0x00, 0xFF, 0xFF),
+                    4 => RGBColor(0x00, 0xAF, 0xAF),
+                    5 => RGBColor(0x00, 0xFF, 0x00),
+                    6 => RGBColor(0x00, 0x8F, 0x00),
+                    7 => RGBColor(0xFF, 0x00, 0xFF),
+                    8 => RGBColor(0xAF, 0x32, 0x7D),
+                    9 => RGBColor(0x00, 0x00, 0xFF),
+                    0x0A => RGBColor(0x32, 0x00, 0x96),
+                    0x0B => RGBColor(0xFF, 0xFF, 0x00),
+                    0x0C => RGBColor(0xFF, 0xAA, 0x00),
+                    0x0D => RGBColor(0xFF, 0x00, 0x00),
+                    0x0E => RGBColor(0xAE, 0x00, 0x00),
+                    0x0F => RGBColor(0xFF, 0xFF, 0xFF),
+                    _ => RGBColor(0x88, 0x88, 0x88),
+                }
+            }
+            MessageCode::MeltingLayer => {
+                // 16-Level Code	Display Category Code	Display Condition	Color Levels
+                // 0	TE	Melting Layer Top Edge	(9C 9C 9C)	medium gray
+                // 1	TC	Melting Layer Top Center	(F5 F5 F5)	near white
+                // 2	BC	Melting Layer Bottom Center	(F5 F5 F5)	near white
+                // 3	BE	Melting Layer Bottom Edge	(9C 9C 9C)	medium gray
+                match code {
+                    0 => RGBColor(0x9C, 0x9C, 0x9C),
+                    1 => RGBColor(0xF5, 0xF5, 0xF5),
+                    2 => RGBColor(0xF5, 0xF5, 0xF5),
+                    3 => RGBColor(0x9C, 0x9C, 0x9C),
+                    _ => RGBColor(0x88, 0x88, 0x88),
+                }
+            }
+            MessageCode::OneHourAccumulation => {
+                // 16-Level Code	Display Inches	Range Inches	Code	Color
+                // 0	ND	in = 0.0	(00 00 00)	black
+                // 1	>0.00	0.0 < in < 0.1	(AA AA AA)	gray
+                // 2	0.10	0.1 ≤ in < 0.25	(76 76 76)	dark gray
+                // 3	0.25	0.25 ≤ in < 0.5	(00 FF FF)	cyan
+                // 4	0.50	0.5 ≤ in < 0.75	(00 AF AF)	dark cyan
+                // 5	0.75	0.75 ≤ in < 1.0	(00 FF 00)	green
+                // 6	1.00	1.0 ≤ in < 1.25	(00 8F 00)	dark green
+                // 7	1.25	1.25 ≤ in < 1.5	(FF 00 FF)	magenta
+                // 8	1.50	1.5 ≤ in < 1.75	(AF 32 7D)	dark magenta
+                // 9	1.75	1.75 ≤ in < 2.0	(00 00 FF)	blue
+                // A	2.00	2.0 ≤ in < 2.5	(32 00 96)	dark blue
+                // B	2.50	2.5 ≤ in < 3.0	(FF FF 00)	yellow
+                // C	3.00	3.0 ≤ in < 4.0	(FF AA 00)	orange
+                // D	4.00	4.0 ≤ in < 6.0	(FF 00 00)	bright red
+                // E	6.00	6.0 ≤ in < 8.0	(AE 00 00)	dark red
+                // F	8.00	8.0 ≤ in	(FF FF FF)	white
+
+                match code {
+                    0 => RGBColor(0x00, 0x00, 0x00),
+                    1 => RGBColor(0xAA, 0xAA, 0xAA),
+                    2 => RGBColor(0x76, 0x76, 0x76),
+                    3 => RGBColor(0x00, 0xFF, 0xFF),
+                    4 => RGBColor(0x00, 0xAF, 0xAF),
+                    5 => RGBColor(0x00, 0xFF, 0x00),
+                    6 => RGBColor(0x00, 0x8F, 0x00),
+                    7 => RGBColor(0xFF, 0x00, 0xFF),
+                    8 => RGBColor(0xAF, 0x32, 0x7D),
+                    9 => RGBColor(0x00, 0x00, 0xFF),
+                    0x0A => RGBColor(0x32, 0x00, 0x96),
+                    0x0B => RGBColor(0xFF, 0xFF, 0x00),
+                    0x0C => RGBColor(0xFF, 0xAA, 0x00),
+                    0x0D => RGBColor(0xFF, 0x00, 0x00),
+                    0x0E => RGBColor(0xAE, 0x00, 0x00),
+                    0x0F => RGBColor(0xFF, 0xFF, 0xFF),
+                    _ => RGBColor(0x88, 0x88, 0x88),
+                }
+            }
+            MessageCode::RainRateClassification => {
+                // Level Code	Display	Meaning	                    Code	    Color
+                // 0	        NP	    No Precip (Biota or NoEcho)	(00 00 00)	black
+                // 10	        UF	    Unfilled	                (66 66 66)	gray
+                // 20	        CZ	    Convective R(Z,ZDR)	        (66 CC 66)	light green
+                // 30	        TZ	    Tropical R(Z,ZDR)	        (C9 70 70)	medium green
+                // 40	        SA	    Specific Attenuation	    (00 BB 00)	dark green
+                // 50	        KL	    R(KDP) 25 coeff.	        (FF FF 70)	yellow
+                // 60	        KH	    R(KDP) 44 coeff.	        (DA 00 00)	red
+                // 70	        Z1	    R(Z)	                    (00 00 FF)	dark blue
+                // 80	        Z6	    R(Z) * 0.6	                (CC 99 FF)	lavender
+                // 90	        Z8	    R(Z) * 0.8	                (33 99 FF)	medium blue
+                // 100	        SI	    R(Z) * multiplier	        (99 CC FF)	light blue
+
+                match code {
+                    0 => RGBColor(0x00, 0x00, 0x00),
+                    10 => RGBColor(0x66, 0x66, 0x66),
+                    20 => RGBColor(0x66, 0xCC, 0x66),
+                    30 => RGBColor(0xC9, 0x70, 0x70),
+                    40 => RGBColor(0x00, 0xBB, 0x00),
+                    50 => RGBColor(0xFF, 0xFF, 0x70),
+                    60 => RGBColor(0xDA, 0x00, 0x00),
+                    70 => RGBColor(0x00, 0x00, 0xFF),
+                    80 => RGBColor(0xCC, 0x99, 0xFF),
+                    90 => RGBColor(0x33, 0x99, 0xFF),
+                    100 => RGBColor(0x99, 0xCC, 0xFF),
+                    _ => RGBColor(0x88, 0x88, 0x88),
+                }
+            }
+            MessageCode::StormRelativeMeanRadialVelocity => {
+                match code {
+                     0 => RGBColor(0x00, 0x00, 0x00),
+                     1 => RGBColor(0x00, 0xE0, 0xFF),
+                     2 => RGBColor(0x00, 0x80, 0xFF),
+                     3 => RGBColor(0x32, 0x00, 0x96),
+                     4 => RGBColor(0x00, 0xFB, 0x90),
+                     5 => RGBColor(0x00, 0xBB, 0x00),
+                     6 => RGBColor(0x00, 0x8F, 0x00),
+                     7 => RGBColor(0xCD, 0xC0, 0x9F),
+                     8 => RGBColor(0x76, 0x76, 0x76),
+                    9 => RGBColor(0xF8, 0x87, 0x00),
+                    0x0A => RGBColor(0xFF, 0xCF, 0x00),
+                    0x0B => RGBColor(0xFF, 0xFF, 0x00),
+                    0x0C => RGBColor(0xAE, 0x00, 0x00),
+                    0x0D => RGBColor(0xD0, 0x70, 0x00),
+                    0x0E => RGBColor(0xFF, 0x00, 0x00),
+                    0x0F => RGBColor(0x77, 0x00, 0x7D),
+                     _ => RGBColor(0x88, 0x88, 0x88),
+                }
+            }
+            _ => {
+                error!("This message code type does not have a color table defined.  It needs to be added to codes.rs.  Tables of color levels for each product type are found in document `2620003AB`");
+                todo!();
+            }
+        }
     }
 }
 
@@ -426,8 +578,10 @@ pub enum PacketCode {
 
 
 impl PacketCode {
-    pub fn is_supported_product(&self) -> bool {
-        let supported_products: [i32;3] = [-20705, 16, 28];
-        supported_products.contains(&(*self as i32))
-    }
+    // pub fn is_supported_product(&self) -> bool {
+    //     let supported_products: [i32;3] = [-20705, 16, 28];
+    //     supported_products.contains(&(*self as i32))
+    // }
+
+
 }

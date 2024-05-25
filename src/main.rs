@@ -161,7 +161,7 @@ fn main() {
             let s = serde_json::to_string(&leftover).unwrap();
             let _ = file.write_all(s.as_bytes());
 
-            let _ = plot(value.symbology.unwrap());
+            let _ = plot(value.symbology.unwrap(), value.message_header.code);
         }
         Err(e) => {
             error!("{:?}", e);

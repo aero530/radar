@@ -25,6 +25,8 @@ pub enum SymPacketData {
     GenericData28(()),
     RadialDataAF1F(RadialPacket),
     DigitalRadialDataArray(DigitalRadialPacket),
+    TextAndSpecialSymbol1(TextPacket),
+    TextAndSpecialSymbol8(TextPacket),
 }
 
 impl SymPacketData {
