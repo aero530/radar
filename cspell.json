@@ -12,6 +12,7 @@
         "MIGFA",
         "NEXRAD",
         "Precip",
-        "SDUS"
+        "SDUS",
+        "thiserror"
     ]
 }

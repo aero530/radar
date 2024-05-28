@@ -774,6 +774,7 @@ dependencies = [
  "plotters",
  "serde",
  "serde_json",
+ "thiserror",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

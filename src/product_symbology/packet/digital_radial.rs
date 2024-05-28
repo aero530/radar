@@ -32,7 +32,7 @@ pub struct DigitalRadialPacket {
 /// and
 /// Radial Data Packet - Packet Code AF1F
 /// Figure 3-10 (Sheet 1 and 2), page 3-113
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq)]
 pub struct DigitalRadialPacketHeader {
     /// Packet Code, Type 16
     pub packet_code: i16,

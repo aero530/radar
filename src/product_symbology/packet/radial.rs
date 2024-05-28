@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use nom::{
     bytes::complete::take, multi::count, number::{complete::i16 as nom_i16, Endianness::Big}, IResult
 };
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 use crate::product_symbology::SymPacketData;
 
@@ -17,7 +17,7 @@ pub fn radial_data_af1f(input: &[u8]) -> IResult<&[u8], SymPacketData> {
     debug!("{:?}", packet_header);
     info!("Reading {:?} radial blocks each with {:?} bins", num_radials, num_bins);
 
-    let (input, radials) = count(|i| data_block(i, num_bins), num_radials)(input)?;
+    let (input, radials) = count(|i| data_block(i), num_radials)(input)?;
     Ok((input, SymPacketData::RadialDataAF1F(RadialPacket{header: packet_header, radials}) ))
 }
 
@@ -34,7 +34,7 @@ pub struct RadialPacket {
 /// and
 /// Radial Data Packet - Packet Code AF1F
 /// Figure 3-10 (Sheet 1 and 2), page 3-113
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq)]
 pub struct RadialPacketHeader {
     /// Packet Code, Type 16
     pub packet_code: i16,
@@ -84,7 +84,7 @@ fn packet_header(input: &[u8]) -> IResult<&[u8], RadialPacketHeader> {
 
 
 
-fn data_block(input: &[u8], num_bins: usize) -> IResult<&[u8], Radial> {
+fn data_block(input: &[u8]) -> IResult<&[u8], Radial> {
     // let (packet_code, num_bins, input) = input;
     let (input, temp_header) = radial_header(input)?;
     debug!("{:?}", temp_header);
@@ -105,7 +105,7 @@ fn data_block(input: &[u8], num_bins: usize) -> IResult<&[u8], Radial> {
     Ok((input, radial))
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq)]
 pub struct RadialHeader {
     /// Number of half words in the radial.
     pub num_halfwords: i16,
@@ -137,7 +137,7 @@ pub struct Radial {
     pub data: Vec<RunLevelEncoding>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq)]
 pub struct RunLevelEncoding {
     pub run: u8,
     pub color: u8,

@@ -10,7 +10,7 @@ use tracing::{error, info};
 /// Description
 /// 16 byte header
 /// Figure 3-6 (Sheet 8), pages 3-40
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq)]
 pub struct SymbologyHeader {
     /// Delineate blocks, -1
     pub divider: i16,
