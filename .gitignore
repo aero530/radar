@@ -1,1 +1,5 @@
 /target
+*.json
+*.png
+.claude
+/examples_tmp
