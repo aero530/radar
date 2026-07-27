@@ -93,15 +93,6 @@ pub fn product_description(input: &[u8]) -> IResult<&[u8], ProductDescription> {
     let (input, offset_graphic) = nom_i32(Big)(input)?; //: i32,
     let (input, offset_tabular) = nom_i32(Big)(input)?; //: i32,
 
-    // let (input, c) = nom_i16(Big)(input)?;
-    // let code = <MessageCode as num::FromPrimitive>::from_i16(c);
-
-    // let (input, days) = nom_i16(Big)(input)?;
-    // let (input, seconds) = nom_i32(Big)(input)?;
-    // let date_time = DateTime::from_timestamp((days as i64)*24*60*60 + (seconds as i64), 0).unwrap_or_default();
-
-
-
     info!("Symbology located at {}", offset_symbology);
     info!("Graphic located at {}", offset_graphic);
     info!("Tabular located at {}", offset_tabular);
@@ -134,4 +125,36 @@ pub fn product_description(input: &[u8]) -> IResult<&[u8], ProductDescription> {
             offset_tabular,
         },
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_real_sample_files_product_description() {
+        let file = include_bytes!("../data/sn_DS.p20-r_kmkx.last");
+        // Text header (30 bytes) + message header (18 bytes) precede this block.
+        let (rest, description) = product_description(&file[48..]).unwrap();
+
+        assert_eq!(description.divider, -1);
+        assert_eq!(description.latitude, 42968);
+        assert_eq!(description.longitude, -88551);
+        assert_eq!(description.height, 1022);
+        assert_eq!(description.product_code, 20);
+        assert_eq!(description.operational_mode, 1);
+        assert_eq!(description.vcp, 35);
+        assert_eq!(description.elevation_num, 1);
+        assert_eq!(description.version, 0);
+        assert_eq!(description.spot_blank, 0);
+        assert_eq!(description.offset_symbology, 60);
+        assert_eq!(description.offset_graphic, 0);
+        assert_eq!(description.offset_tabular, 0);
+        assert_eq!(rest.len(), file.len() - 48 - 102);
+    }
+
+    #[test]
+    fn rejects_truncated_input() {
+        assert!(product_description(&[0xFF, 0xFF, 0, 1]).is_err());
+    }
 }

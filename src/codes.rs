@@ -1,10 +1,17 @@
 use parse_display::{Display, FromStr};
 use plotters::style::RGBColor;
 use serde::{Deserialize, Serialize};
-use tracing::error;
 
+/// The message (product) code carried in every Graphic Product Message
+/// header — identifies what kind of radar product a file contains (base
+/// reflectivity, velocity, precipitation accumulation, and so on).
+///
 /// TABLE II NEXRAD MESSAGE CODE DEFINITIONS
 /// TABLE III MESSAGE CODES FOR PRODUCTS
+///
+/// Every variant here corresponds to a real product code number from the
+/// ICD, but only the ones listed in [`MessageCode::is_supported_product`]
+/// can actually be parsed past the message header by this crate.
 #[derive(Serialize, Deserialize, Display, FromStr, PartialEq, Debug, Copy, Clone, Default)]
 #[derive(FromPrimitive, ToPrimitive)]
 pub enum MessageCode {
@@ -33,6 +40,18 @@ pub enum MessageCode {
     CommandControlMessage = 14,
     #[display("Bias Table Message")]
     BiasTableMessage = 15,
+    #[display("Base Reflectivity")]
+    BaseReflectivity19 = 19,
+    #[display("Base Reflectivity")]
+    BaseReflectivity20 = 20,
+    #[display("Base Velocity")]
+    BaseVelocity25 = 25,
+    #[display("Base Velocity")]
+    BaseVelocity27 = 27,
+    #[display("Base Spectrum Width")]
+    BaseSpectrumWidth28 = 28,
+    #[display("Clutter Filter Control")]
+    ClutterFilterControl = 34,
     #[display("Base Spectrum Width")]
     BaseSpectrumWidth = 30,
     #[display("User Selectable Storm Total Precipitation")]
@@ -201,6 +220,12 @@ pub enum MessageCode {
     IcingHazardLevel = 178,
     #[display("Hail Hazard Layers")]
     HailHazardLayers = 179,
+    #[display("Base Reflectivity")]
+    BaseReflectivity181 = 181,
+    #[display("Base Velocity")]
+    BaseVelocity182 = 182,
+    #[display("Base Reflectivity")]
+    BaseReflectivity186 = 186,
     #[display("Super Resolution Digital Reflectivity Data-Quality-Edited")]
     SuperResolutionDigitalReflectivityDataQualityEdited = 193,
     #[display("Digital Reflectivity, DQA-Edited Data Array")]
@@ -214,11 +239,22 @@ pub enum MessageCode {
 }
 
 impl MessageCode {
+    /// Whether this crate's [`crate::message_header`]/[`crate::product_description`]
+    /// parsing has been validated against this product type. `Radar::parse`
+    /// rejects any file whose product code is not in this list, even if the
+    /// message header and product description blocks themselves would
+    /// otherwise parse fine.
     pub fn is_supported_product(&self) -> bool {
         let supported_products: [u32;33] = [19, 20, 25, 27, 28, 30, 32, 34, 56, 78, 79, 80, 94, 99, 134, 135, 138, 159, 161, 163, 165, 169, 170, 171, 172, 173, 174, 175, 176, 177, 181, 182, 186];
         supported_products.contains(&(*self as u32))
     }
 
+    /// The highest product version number this crate knows how to interpret
+    /// for this product type, or `None` if the product isn't supported at
+    /// all (see [`MessageCode::is_supported_product`]). A file whose
+    /// `ProductDescription::version` exceeds this is rejected rather than
+    /// parsed, since newer versions may have changed the product-dependent
+    /// fields in ways this crate doesn't account for.
     pub fn supported_version(&self) -> Option<u8> {
         match *self as u32 {
             19 => Some(0),
@@ -258,162 +294,423 @@ impl MessageCode {
         }
     }
 
+    /// Whether [`Self::color_code`] has a real color table for this product
+    /// type, as opposed to falling back to a neutral gray for every level.
+    pub fn has_color_table(&self) -> bool {
+        self.color_table().is_some()
+    }
+
+    /// The display color table this product type uses, if the Product
+    /// Specification defines one.
+    ///
+    /// Every table is transcribed from the Interface Control Document Product
+    /// Specification, document 2620003AE (Build 24.0, 19 August 2025); the
+    /// section each came from is cited on its constant.
+    pub fn color_table(&self) -> Option<ColorTable> {
+        // (levels, first level code, step between level codes)
+        let (levels, first_code, step): (&'static [(u8, u8, u8)], u8, u8) = match self {
+            // 3.2.2 (8 levels), shared by the legacy spectrum width products.
+            MessageCode::BaseSpectrumWidth28 | MessageCode::BaseSpectrumWidth => {
+                (&SPECTRUM_WIDTH, 0, 1)
+            }
+
+            // 8.2.2
+            MessageCode::EchoTops => (&ECHO_TOPS, 0, 1),
+
+            // 12.2.2. These are the wind barb colour levels, which match the
+            // 1 to 5 range of the Wind Barb Data Packet's value field
+            // (Figure 3-13) - hence a first level code of 1, not 0. The same
+            // section also defines a separate eight-level reflectivity table
+            // used to shade velocity points, which this does not model.
+            MessageCode::VADWindProfile => (&VAD_WIND_BARB, 1, 1),
+
+            // 16.2.2
+            MessageCode::StormRelativeMeanRadialVelocity => (&STORM_RELATIVE_VELOCITY, 0, 1),
+
+            // 17.2.2
+            MessageCode::VerticallyIntegratedLiquid => (&VERTICALLY_INTEGRATED_LIQUID, 0, 1),
+
+            // 23.2.2 (8 levels), shared by the layer composite reflectivity
+            // products.
+            MessageCode::LayerCompositeReflectivityLayer1Max
+            | MessageCode::LayerCompositeReflectivityLayer2Max
+            | MessageCode::LayerCompositeReflectivityAPRemoved
+            | MessageCode::LayerCompositeReflectivity => (&LAYER_COMPOSITE_REFLECTIVITY, 0, 1),
+
+            // 28.2.2
+            MessageCode::SurfaceRainfallAccumulation1hr
+            | MessageCode::SurfaceRainfallAccumulation3hr => {
+                (&SURFACE_RAINFALL_ACCUMULATION, 0, 1)
+            }
+
+            // 29.2.2
+            MessageCode::StormTotalRainfallAccumulation
+            | MessageCode::DigitalStormTotalPrecipitation => {
+                (&STORM_TOTAL_RAINFALL_ACCUMULATION, 0, 1)
+            }
+
+            // 40.2.2
+            MessageCode::UserSelectableLayerCompositeReflectivity => {
+                (&USER_SELECTABLE_LAYER_COMPOSITE, 0, 1)
+            }
+
+            // 42.2.2
+            MessageCode::OneHourSnowWaterEquivalent | MessageCode::OneHourSnowDepth => {
+                (&ONE_HOUR_SNOW_ACCUMULATION, 0, 1)
+            }
+
+            // 43.2.2
+            MessageCode::StormTotalSnowWaterEquivalent | MessageCode::StormTotalSnowDepth => {
+                (&STORM_TOTAL_SNOW_ACCUMULATION, 0, 1)
+            }
+
+            // 52.2.2. Only levels 0 to 3 are defined; 4 to F are "TBD".
+            MessageCode::MeltingLayer => (&MELTING_LAYER, 0, 1),
+
+            // 53.2.2
+            MessageCode::OneHourAccumulation => (&ONE_HOUR_ACCUMULATION, 0, 1),
+
+            // 68.2.1. This product's level codes step by 10 (0, 10, ... 100)
+            // rather than by 1.
+            MessageCode::RainRateClassification => (&RAIN_RATE_CLASSIFICATION, 0, 10),
+
+            _ => return None,
+        };
+        Some(ColorTable {
+            levels,
+            first_code,
+            step,
+        })
+    }
+
+    /// Maps a raw data level code to the display color the Product
+    /// Specification defines for it, used by [`crate::Radar::plot`].
+    ///
+    /// Falls back to [`FALLBACK_GRAY`] for any product type without a table
+    /// (see [`MessageCode::color_table`]) and for any level code outside the
+    /// table's range. Check [`MessageCode::has_color_table`] first if you need
+    /// to distinguish "really is gray" from "no table for this product".
+    ///
+    /// Note that the legacy 16-level Base Reflectivity products (19/20) are
+    /// among those without a table: revision AE of the Product Specification
+    /// no longer defines one for them, having superseded them with the
+    /// 256-level digital data array products.
     pub fn color_code(&self, code: u8) -> RGBColor {
-        match self {
-            
-            MessageCode::StormTotalSnowDepth => {
-                // Code	SSW_Display_Inches	SSW_Range_Inches SSD_Range_Inches	SSD_Display_Inches	Code	Color
-                // 0	ND	in=0.0	ND	in=0.0	(00 00 00)	black
-                // 1	>0.00	0.0<in<0.05	>0.00	0.0<in<0.5	(AA AA AA)	gray
-                // 2	0.05	0.05<in<0.10	0.5	0.5<in<1.0	(76 76 76)	dark gray
-                // 3	0.10	0.10<in<0.15	1.0	1.0<in<2.0	(00 FF FF)	cyan
-                // 4	0.15	0.15<in<0.20	2.0	2.0<in<3.0	(00 AF AF)	dark cyan
-                // 5	0.20	0.20<in<0.25	3.0	3.0<in<4.0	(00 FF 00)	green
-                // 6	0.25	0.25<in<0.30	4.0	4.0<in<5.0	(00 8F 00)	dark green
-                // 7	0.30	0.30<in<0.40	5.0	5.0<in<6.0	(FF 00 FF)	magenta
-                // 8	0.40	0.40<in<0.50	6.0	6.0<in<8.0	(AF 32 7D)	dark magenta
-                // 9	0.50	0.50<in<0.75	8.0	8.0<in<10.0	(00 00 FF)	blue
-                // A	0.75	0.75<in<1.00	10.0	10.0<in<12.0	(32 00 96)	dark blue
-                // B	1.00	1.00<in<1.25	12.0	12.0<in<15.0	(FF FF 00)	yellow
-                // C	1.25	1.25<in<1.50	15.0	15.0<in<20.0	(FF AA 00)	orange
-                // D	1.50	1.50<in<2.00	20.0	20.0<in<25.0	(FF 00 00)	bright red
-                // E	2.00	2.00<in<2.50	25.0	25.0<in<30.0	(AE 00 00)	dark red
-                // F	2.50	2.50>in	30	30.0>in	(FF FF FF)	white
-                match code {
-                    0 => RGBColor(0x00, 0x00, 0x00),
-                    1 => RGBColor(0xAA, 0xAA, 0xAA),
-                    2 => RGBColor(0x76, 0x76, 0x76),
-                    3 => RGBColor(0x00, 0xFF, 0xFF),
-                    4 => RGBColor(0x00, 0xAF, 0xAF),
-                    5 => RGBColor(0x00, 0xFF, 0x00),
-                    6 => RGBColor(0x00, 0x8F, 0x00),
-                    7 => RGBColor(0xFF, 0x00, 0xFF),
-                    8 => RGBColor(0xAF, 0x32, 0x7D),
-                    9 => RGBColor(0x00, 0x00, 0xFF),
-                    0x0A => RGBColor(0x32, 0x00, 0x96),
-                    0x0B => RGBColor(0xFF, 0xFF, 0x00),
-                    0x0C => RGBColor(0xFF, 0xAA, 0x00),
-                    0x0D => RGBColor(0xFF, 0x00, 0x00),
-                    0x0E => RGBColor(0xAE, 0x00, 0x00),
-                    0x0F => RGBColor(0xFF, 0xFF, 0xFF),
-                    _ => RGBColor(0x88, 0x88, 0x88),
-                }
-            }
-            MessageCode::MeltingLayer => {
-                // 16-Level Code	Display Category Code	Display Condition	Color Levels
-                // 0	TE	Melting Layer Top Edge	(9C 9C 9C)	medium gray
-                // 1	TC	Melting Layer Top Center	(F5 F5 F5)	near white
-                // 2	BC	Melting Layer Bottom Center	(F5 F5 F5)	near white
-                // 3	BE	Melting Layer Bottom Edge	(9C 9C 9C)	medium gray
-                match code {
-                    0 => RGBColor(0x9C, 0x9C, 0x9C),
-                    1 => RGBColor(0xF5, 0xF5, 0xF5),
-                    2 => RGBColor(0xF5, 0xF5, 0xF5),
-                    3 => RGBColor(0x9C, 0x9C, 0x9C),
-                    _ => RGBColor(0x88, 0x88, 0x88),
-                }
-            }
-            MessageCode::OneHourAccumulation => {
-                // 16-Level Code	Display Inches	Range Inches	Code	Color
-                // 0	ND	in = 0.0	(00 00 00)	black
-                // 1	>0.00	0.0 < in < 0.1	(AA AA AA)	gray
-                // 2	0.10	0.1 ≤ in < 0.25	(76 76 76)	dark gray
-                // 3	0.25	0.25 ≤ in < 0.5	(00 FF FF)	cyan
-                // 4	0.50	0.5 ≤ in < 0.75	(00 AF AF)	dark cyan
-                // 5	0.75	0.75 ≤ in < 1.0	(00 FF 00)	green
-                // 6	1.00	1.0 ≤ in < 1.25	(00 8F 00)	dark green
-                // 7	1.25	1.25 ≤ in < 1.5	(FF 00 FF)	magenta
-                // 8	1.50	1.5 ≤ in < 1.75	(AF 32 7D)	dark magenta
-                // 9	1.75	1.75 ≤ in < 2.0	(00 00 FF)	blue
-                // A	2.00	2.0 ≤ in < 2.5	(32 00 96)	dark blue
-                // B	2.50	2.5 ≤ in < 3.0	(FF FF 00)	yellow
-                // C	3.00	3.0 ≤ in < 4.0	(FF AA 00)	orange
-                // D	4.00	4.0 ≤ in < 6.0	(FF 00 00)	bright red
-                // E	6.00	6.0 ≤ in < 8.0	(AE 00 00)	dark red
-                // F	8.00	8.0 ≤ in	(FF FF FF)	white
-
-                match code {
-                    0 => RGBColor(0x00, 0x00, 0x00),
-                    1 => RGBColor(0xAA, 0xAA, 0xAA),
-                    2 => RGBColor(0x76, 0x76, 0x76),
-                    3 => RGBColor(0x00, 0xFF, 0xFF),
-                    4 => RGBColor(0x00, 0xAF, 0xAF),
-                    5 => RGBColor(0x00, 0xFF, 0x00),
-                    6 => RGBColor(0x00, 0x8F, 0x00),
-                    7 => RGBColor(0xFF, 0x00, 0xFF),
-                    8 => RGBColor(0xAF, 0x32, 0x7D),
-                    9 => RGBColor(0x00, 0x00, 0xFF),
-                    0x0A => RGBColor(0x32, 0x00, 0x96),
-                    0x0B => RGBColor(0xFF, 0xFF, 0x00),
-                    0x0C => RGBColor(0xFF, 0xAA, 0x00),
-                    0x0D => RGBColor(0xFF, 0x00, 0x00),
-                    0x0E => RGBColor(0xAE, 0x00, 0x00),
-                    0x0F => RGBColor(0xFF, 0xFF, 0xFF),
-                    _ => RGBColor(0x88, 0x88, 0x88),
-                }
-            }
-            MessageCode::RainRateClassification => {
-                // Level Code	Display	Meaning	                    Code	    Color
-                // 0	        NP	    No Precip (Biota or NoEcho)	(00 00 00)	black
-                // 10	        UF	    Unfilled	                (66 66 66)	gray
-                // 20	        CZ	    Convective R(Z,ZDR)	        (66 CC 66)	light green
-                // 30	        TZ	    Tropical R(Z,ZDR)	        (C9 70 70)	medium green
-                // 40	        SA	    Specific Attenuation	    (00 BB 00)	dark green
-                // 50	        KL	    R(KDP) 25 coeff.	        (FF FF 70)	yellow
-                // 60	        KH	    R(KDP) 44 coeff.	        (DA 00 00)	red
-                // 70	        Z1	    R(Z)	                    (00 00 FF)	dark blue
-                // 80	        Z6	    R(Z) * 0.6	                (CC 99 FF)	lavender
-                // 90	        Z8	    R(Z) * 0.8	                (33 99 FF)	medium blue
-                // 100	        SI	    R(Z) * multiplier	        (99 CC FF)	light blue
-
-                match code {
-                    0 => RGBColor(0x00, 0x00, 0x00),
-                    10 => RGBColor(0x66, 0x66, 0x66),
-                    20 => RGBColor(0x66, 0xCC, 0x66),
-                    30 => RGBColor(0xC9, 0x70, 0x70),
-                    40 => RGBColor(0x00, 0xBB, 0x00),
-                    50 => RGBColor(0xFF, 0xFF, 0x70),
-                    60 => RGBColor(0xDA, 0x00, 0x00),
-                    70 => RGBColor(0x00, 0x00, 0xFF),
-                    80 => RGBColor(0xCC, 0x99, 0xFF),
-                    90 => RGBColor(0x33, 0x99, 0xFF),
-                    100 => RGBColor(0x99, 0xCC, 0xFF),
-                    _ => RGBColor(0x88, 0x88, 0x88),
-                }
-            }
-            MessageCode::StormRelativeMeanRadialVelocity => {
-                match code {
-                     0 => RGBColor(0x00, 0x00, 0x00),
-                     1 => RGBColor(0x00, 0xE0, 0xFF),
-                     2 => RGBColor(0x00, 0x80, 0xFF),
-                     3 => RGBColor(0x32, 0x00, 0x96),
-                     4 => RGBColor(0x00, 0xFB, 0x90),
-                     5 => RGBColor(0x00, 0xBB, 0x00),
-                     6 => RGBColor(0x00, 0x8F, 0x00),
-                     7 => RGBColor(0xCD, 0xC0, 0x9F),
-                     8 => RGBColor(0x76, 0x76, 0x76),
-                    9 => RGBColor(0xF8, 0x87, 0x00),
-                    0x0A => RGBColor(0xFF, 0xCF, 0x00),
-                    0x0B => RGBColor(0xFF, 0xFF, 0x00),
-                    0x0C => RGBColor(0xAE, 0x00, 0x00),
-                    0x0D => RGBColor(0xD0, 0x70, 0x00),
-                    0x0E => RGBColor(0xFF, 0x00, 0x00),
-                    0x0F => RGBColor(0x77, 0x00, 0x7D),
-                     _ => RGBColor(0x88, 0x88, 0x88),
-                }
-            }
-            _ => {
-                error!("This message code type does not have a color table defined.  It needs to be added to codes.rs.  Tables of color levels for each product type are found in document `2620003AB`");
-                todo!();
-            }
-        }
+        self.color_table()
+            .and_then(|table| table.color(code))
+            .unwrap_or(FALLBACK_GRAY)
     }
 }
 
+/// The color used when a product has no table defined, or when a data level
+/// falls outside the table its product does define.
+pub const FALLBACK_GRAY: RGBColor = RGBColor(0x88, 0x88, 0x88);
+
+/// A product's display color table: RGB values for its data level codes.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct ColorTable {
+    levels: &'static [(u8, u8, u8)],
+    /// The level code the first entry corresponds to. Zero for every product
+    /// except VAD Wind Profile, whose barb colour levels start at 1.
+    first_code: u8,
+    /// Increment between successive level codes. One for every product except
+    /// Rain Rate Classification, whose codes run 0, 10, 20 ... 100.
+    step: u8,
+}
+
+impl ColorTable {
+    /// The color for a data level code, or `None` if the code is not one this
+    /// table defines.
+    pub fn color(&self, code: u8) -> Option<RGBColor> {
+        if self.step == 0 || code < self.first_code {
+            return None;
+        }
+        let offset = code - self.first_code;
+        if !offset.is_multiple_of(self.step) {
+            return None;
+        }
+        self.levels
+            .get((offset / self.step) as usize)
+            .map(|&(r, g, b)| RGBColor(r, g, b))
+    }
+
+    /// Number of data levels the table defines.
+    pub fn len(&self) -> usize {
+        self.levels.len()
+    }
+
+    /// Whether the table defines no levels at all.
+    pub fn is_empty(&self) -> bool {
+        self.levels.is_empty()
+    }
+
+    /// The level codes this table defines, in order.
+    pub fn level_codes(&self) -> impl Iterator<Item = u8> + '_ {
+        (0..self.levels.len()).map(move |i| self.first_code + i as u8 * self.step)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Color tables transcribed from the Product Specification (2620003AE).
+//
+// Each entry is indexed by data level code (offset by the table's first level
+// code and step); the trailing comment records the level code and the colour
+// name the document gives it.
+// ---------------------------------------------------------------------------
+
+/// VAD Wind Profile wind barb colours - Product Specification 12.2.2.
+/// Level codes run 1 to 5, matching the Wind Barb Data Packet's value field.
+const VAD_WIND_BARB: [(u8, u8, u8); 5] = [
+    (0x00, 0xFF, 0x00), // 1: green
+    (0xFF, 0xFF, 0x00), // 2: yellow
+    (0xFF, 0x00, 0x00), // 3: bright red
+    (0x00, 0xE0, 0xFF), // 4: light blue
+    (0xFF, 0x70, 0xFF), // 5: medium purple
+];
+
+/// Storm Relative Mean Radial Velocity - Product Specification 16.2.2.
+const STORM_RELATIVE_VELOCITY: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0x00, 0xE0, 0xFF), // 1: light blue
+    (0x00, 0x80, 0xFF), // 2: medium blue
+    (0x32, 0x00, 0x96), // 3: dark blue
+    (0x00, 0xFB, 0x90), // 4: light green
+    (0x00, 0xBB, 0x00), // 5: medium green
+    (0x00, 0x8F, 0x00), // 6: dark green
+    (0xCD, 0xC0, 0x9F), // 7: light gray
+    (0x76, 0x76, 0x76), // 8: dark gray
+    (0xF8, 0x87, 0x00), // 9: medium orange
+    (0xFF, 0xCF, 0x00), // A: medium yellow
+    (0xFF, 0xFF, 0x00), // B: yellow
+    (0xAE, 0x00, 0x00), // C: dark red
+    (0xD0, 0x70, 0x00), // D: medium brown
+    (0xFF, 0x00, 0x00), // E: bright red
+    (0x77, 0x00, 0x7D), // F: dark purple
+];
+
+/// Layer Composite Reflectivity - Product Specification 23.2.2 (8 levels).
+const LAYER_COMPOSITE_REFLECTIVITY: [(u8, u8, u8); 8] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0xFF, 0xAA, 0xAA), // 1: light pink
+    (0xC9, 0x70, 0x70), // 2: dark pink
+    (0x00, 0xBB, 0x00), // 3: medium green
+    (0xFF, 0xFF, 0x70), // 4: light yellow
+    (0xDA, 0x00, 0x00), // 5: medium red
+    (0x00, 0x00, 0xFF), // 6: blue
+    (0xFF, 0xFF, 0xFF), // 7: white
+];
+
+/// Melting Layer - Product Specification 52.2.2. Levels 4 to F are "TBD" in
+/// the document and so are not defined here.
+const MELTING_LAYER: [(u8, u8, u8); 4] = [
+    (0x9C, 0x9C, 0x9C), // 0: medium gray (Top Edge)
+    (0xF5, 0xF5, 0xF5), // 1: near white  (Top Center)
+    (0xF5, 0xF5, 0xF5), // 2: near white  (Bottom Center)
+    (0x9C, 0x9C, 0x9C), // 3: medium gray (Bottom Edge)
+];
+
+/// One-Hour Accumulation - Product Specification 53.2.2.
+const ONE_HOUR_ACCUMULATION: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0xAA, 0xAA, 0xAA), // 1: gray
+    (0x76, 0x76, 0x76), // 2: dark gray
+    (0x00, 0xFF, 0xFF), // 3: cyan
+    (0x00, 0xAF, 0xAF), // 4: dark cyan
+    (0x00, 0xFF, 0x00), // 5: green
+    (0x00, 0x8F, 0x00), // 6: dark green
+    (0xFF, 0x00, 0xFF), // 7: magenta
+    (0xAF, 0x32, 0x7D), // 8: dark magenta
+    (0x00, 0x00, 0xFF), // 9: blue
+    (0x32, 0x00, 0x96), // A: dark blue
+    (0xFF, 0xFF, 0x00), // B: yellow
+    (0xFF, 0xAA, 0x00), // C: orange
+    (0xFF, 0x00, 0x00), // D: bright red
+    (0xAE, 0x00, 0x00), // E: dark red
+    (0xFF, 0xFF, 0xFF), // F: white
+];
+
+/// Rain Rate Classification - Product Specification 68.2.1. Level codes step
+/// by 10, from 0 (No Precip) to 100 (R(Z) * multiplier).
+const RAIN_RATE_CLASSIFICATION: [(u8, u8, u8); 11] = [
+    (0x00, 0x00, 0x00), // 0:   black       NP  No Precip (Biota or NoEcho)
+    (0x66, 0x66, 0x66), // 10:  gray        UF  Unfilled
+    (0x66, 0xCC, 0x66), // 20:  light green CZ  Continental R(Z,ZDR)
+    (0xC9, 0x70, 0x70), // 30:  med green   TZ  Tropical R(Z,ZDR)
+    (0x00, 0xBB, 0x00), // 40:  dark green  SA  Specific Attenuation
+    (0xFF, 0xFF, 0x70), // 50:  yellow      KL  R(KDP) 27 coeff.
+    (0xDA, 0x00, 0x00), // 60:  red         KH  R(KDP) 44 coeff.
+    (0x00, 0x00, 0xFF), // 70:  dark blue   Z1  R(Z)
+    (0xCC, 0x99, 0xFF), // 80:  lavender    Z6  R(Z) * 0.6
+    (0x33, 0x99, 0xFF), // 90:  med blue    Z8  R(Z) * 0.8
+    (0x99, 0xCC, 0xFF), // 100: light blue  SI  R(Z) * multiplier
+];
+
+/// Spectrum Width - Product Specification 3.2.2.
+const SPECTRUM_WIDTH: [(u8, u8, u8); 8] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0x76, 0x76, 0x76), // 1: dark gray
+    (0x9C, 0x9C, 0x9C), // 2: medium gray
+    (0x00, 0xBB, 0x00), // 3: medium green
+    (0xFF, 0x00, 0x00), // 4: bright red
+    (0xD0, 0x70, 0x00), // 5: medium brown
+    (0xFF, 0xFF, 0x00), // 6: yellow
+    (0x77, 0x00, 0x7D), // 7: dark purple
+];
+
+/// Echo Tops - Product Specification 8.2.2.
+const ECHO_TOPS: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0x00, 0x00, 0x00), // 1: black
+    (0x76, 0x76, 0x76), // 2: dark gray
+    (0x00, 0xE0, 0xFF), // 3: light blue
+    (0x00, 0xB0, 0xFF), // 4: lt medium blue
+    (0x00, 0x90, 0xCC), // 5: dk medium blue
+    (0x32, 0x00, 0x96), // 6: dark blue
+    (0x00, 0xFB, 0x90), // 7: light green
+    (0x00, 0xBB, 0x00), // 8: medium green
+    (0x00, 0xEF, 0x00), // 9: bright green
+    (0xFE, 0xBF, 0x00), // A: tan
+    (0xFF, 0xFF, 0x00), // B: yellow
+    (0xAE, 0x00, 0x00), // C: dark red
+    (0xFF, 0x00, 0x00), // D: bright red
+    (0xFF, 0xFF, 0xFF), // E: white
+    (0xE7, 0x00, 0xFF), // F: purple
+];
+
+/// Vertically Integrated Liquid - Product Specification 17.2.2.
+const VERTICALLY_INTEGRATED_LIQUID: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0x9C, 0x9C, 0x9C), // 1: medium gray
+    (0x76, 0x76, 0x76), // 2: dark gray
+    (0xFA, 0xAA, 0xAA), // 3: light pink
+    (0xEE, 0x8C, 0x8C), // 4: medium pink
+    (0xC9, 0x70, 0x70), // 5: dark pink
+    (0x00, 0xFB, 0x90), // 6: light green
+    (0x00, 0xBB, 0x00), // 7: medium green
+    (0xFF, 0xFF, 0x70), // 8: light yellow
+    (0xD0, 0xD0, 0x60), // 9: dark yellow
+    (0xFF, 0x60, 0x60), // A: light red
+    (0xDA, 0x00, 0x00), // B: medium red
+    (0xAE, 0x00, 0x00), // C: dark red
+    (0x00, 0x00, 0xFF), // D: blue
+    (0xFF, 0xFF, 0xFF), // E: white
+    (0xE7, 0x00, 0xFF), // F: purple
+];
+
+/// Surface Rainfall Accumulation - Product Specification 28.2.2.
+const SURFACE_RAINFALL_ACCUMULATION: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0xAA, 0xAA, 0xAA), // 1: gray
+    (0x76, 0x76, 0x76), // 2: dark gray
+    (0x00, 0xFF, 0xFF), // 3: cyan
+    (0x00, 0xAF, 0xAF), // 4: dark cyan
+    (0x00, 0xFF, 0x00), // 5: green
+    (0x00, 0x8F, 0x00), // 6: dark green
+    (0xFF, 0x00, 0xFF), // 7: magenta
+    (0xAF, 0x32, 0x7D), // 8: dark magenta
+    (0x00, 0x00, 0xFF), // 9: blue
+    (0x32, 0x00, 0x96), // A: dark blue
+    (0xFF, 0xFF, 0x00), // B: yellow
+    (0xFF, 0xAA, 0x00), // C: orange
+    (0xFF, 0x00, 0x00), // D: bright red
+    (0xAE, 0x00, 0x00), // E: dark red
+    (0xFF, 0xFF, 0xFF), // F: white
+];
+
+/// Storm Total Rainfall Accumulation - Product Specification 29.2.2.
+const STORM_TOTAL_RAINFALL_ACCUMULATION: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0xAA, 0xAA, 0xAA), // 1: gray
+    (0x76, 0x76, 0x76), // 2: dark gray
+    (0x00, 0xFF, 0xFF), // 3: cyan
+    (0x00, 0xAF, 0xAF), // 4: dark cyan
+    (0x00, 0xFF, 0x00), // 5: green
+    (0x00, 0x8F, 0x00), // 6: dark green
+    (0xFF, 0x00, 0xFF), // 7: magenta
+    (0xAF, 0x32, 0x7D), // 8: dark magenta
+    (0x00, 0x00, 0xFF), // 9: blue
+    (0x32, 0x00, 0x96), // A: dark blue
+    (0xFF, 0xFF, 0x00), // B: yellow
+    (0xFF, 0xAA, 0x00), // C: orange
+    (0xFF, 0x00, 0x00), // D: bright red
+    (0xAE, 0x00, 0x00), // E: dark red
+    (0xFF, 0xFF, 0xFF), // F: white
+];
+
+/// User Selectable Layer Composite Reflectivity - Product Specification 40.2.2.
+const USER_SELECTABLE_LAYER_COMPOSITE: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0x9C, 0x9C, 0x9C), // 1: medium gray
+    (0x76, 0x76, 0x76), // 2: dark gray
+    (0xFF, 0xAA, 0xAA), // 3: light pink
+    (0xEE, 0x8C, 0x8C), // 4: medium pink
+    (0xC9, 0x70, 0x70), // 5: dark pink
+    (0x00, 0xFB, 0x90), // 6: light green
+    (0x00, 0xBB, 0x00), // 7: medium green
+    (0xFF, 0xFF, 0x70), // 8: light yellow
+    (0xD0, 0xD0, 0x60), // 9: dark yellow
+    (0xFF, 0x60, 0x60), // 10: light red
+    (0xDA, 0x00, 0x00), // 11: medium red
+    (0xAE, 0x00, 0x00), // 12: dark red
+    (0x00, 0x00, 0xFF), // 13: blue
+    (0xFF, 0xFF, 0xFF), // 14: white
+    (0xE7, 0x00, 0xFF), // 15: purple
+];
+
+/// One Hour Snow Accumulation - Product Specification 42.2.2.
+const ONE_HOUR_SNOW_ACCUMULATION: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0xAA, 0xAA, 0xAA), // 1: gray
+    (0x76, 0x76, 0x76), // 2: dark gray
+    (0x00, 0xFF, 0xFF), // 3: cyan
+    (0x00, 0xAF, 0xAF), // 4: dark cyan
+    (0x00, 0xFF, 0x00), // 5: green
+    (0x00, 0x8F, 0x00), // 6: dark green
+    (0xFF, 0x00, 0xFF), // 7: magenta
+    (0xAF, 0x32, 0x7D), // 8: dark magenta
+    (0x00, 0x00, 0xFF), // 9: blue
+    (0x32, 0x00, 0x96), // A: dark blue
+    (0xFF, 0xFF, 0x00), // B: yellow
+    (0xFF, 0xAA, 0x00), // C: orange
+    (0xFF, 0x00, 0x00), // D: bright red
+    (0xAE, 0x00, 0x00), // E: dark red
+    (0xFF, 0xFF, 0xFF), // F: white
+];
+
+/// Storm Total Snow Accumulation - Product Specification 43.2.2.
+const STORM_TOTAL_SNOW_ACCUMULATION: [(u8, u8, u8); 16] = [
+    (0x00, 0x00, 0x00), // 0: black
+    (0xAA, 0xAA, 0xAA), // 1: gray
+    (0x76, 0x76, 0x76), // 2: dark gray
+    (0x00, 0xFF, 0xFF), // 3: cyan
+    (0x00, 0xAF, 0xAF), // 4: dark cyan
+    (0x00, 0xFF, 0x00), // 5: green
+    (0x00, 0x8F, 0x00), // 6: dark green
+    (0xFF, 0x00, 0xFF), // 7: magenta
+    (0xAF, 0x32, 0x7D), // 8: dark magenta
+    (0x00, 0x00, 0xFF), // 9: blue
+    (0x32, 0x00, 0x96), // A: dark blue
+    (0xFF, 0xFF, 0x00), // B: yellow
+    (0xFF, 0xAA, 0x00), // C: orange
+    (0xFF, 0x00, 0x00), // D: bright red
+    (0xAE, 0x00, 0x00), // E: dark red
+    (0xFF, 0xFF, 0xFF), // F: white
+];
 
 
-/// Figure 3-7 through 3-14
-/// 
+
+
+/// The packet code at the start of each symbology-block data layer, which
+/// identifies the binary layout of that layer's packet (a vector, a text
+/// label, radial data, a raster image, and so on).
+///
+/// Figure 3-7 through 3-14. Only [`PacketCode::TextAndSpecialSymbol1`],
+/// [`PacketCode::TextAndSpecialSymbol2`], [`PacketCode::TextAndSpecialSymbol8`],
+/// [`PacketCode::RadialDataAF1F`], and [`PacketCode::DigitalRadialDataArray`]
+/// have parsers implemented; every other code (including
+/// [`PacketCode::GenericData28`], which is XDR-encoded) fails clearly
+/// rather than panicking or silently producing wrong data — see
+/// `README.md` for the current list.
 #[derive(Serialize, Deserialize, Display, FromStr, PartialEq, Debug, Copy, Clone, Default)]
 #[derive(FromPrimitive, ToPrimitive)]
 pub enum PacketCode {
@@ -494,11 +791,15 @@ pub enum PacketCode {
     #[display("Precipitation Rate Data Array")]
     PrecipitationRateDataArray = 18,
     
-    /// Figure 3-11c. (Sheet 1, 2) 
+    /// Figure 3-11c. (Sheet 1, 2)
     #[display("Digital Radial Data Array")]
     DigitalRadialDataArray = 16,
-    
-    /// Figure 3-12. 
+
+    /// Figure 3-11d. (Sheet 1, 2) page 3-102
+    #[display("Digital Raster Data Array")]
+    DigitalRasterDataArray = 33,
+
+    /// Figure 3-12.
     #[display("Vector Arrow Data")]
     VectorArrowData = 5,
     
@@ -577,11 +878,202 @@ pub enum PacketCode {
 }
 
 
-impl PacketCode {
-    // pub fn is_supported_product(&self) -> bool {
-    //     let supported_products: [i32;3] = [-20705, 16, 28];
-    //     supported_products.contains(&(*self as i32))
-    // }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    /// Every code number that `is_supported_product`/`supported_version`
+    /// claim to support must round-trip through `FromPrimitive` back to the
+    /// exact same code. This is a regression test for a bug where nine of
+    /// these codes (including the very common Base Reflectivity/Velocity
+    /// products, 19/20/25/27/28/34/181/182/186) had no matching enum
+    /// variant at all, so `FromPrimitive` silently produced `Spare` instead
+    /// and every file using one of those product types was rejected as
+    /// "unsupported."
+    #[test]
+    fn every_declared_supported_code_has_a_matching_enum_variant() {
+        let supported_products: [u32; 33] = [
+            19, 20, 25, 27, 28, 30, 32, 34, 56, 78, 79, 80, 94, 99, 134, 135, 138, 159, 161, 163,
+            165, 169, 170, 171, 172, 173, 174, 175, 176, 177, 181, 182, 186,
+        ];
 
+        for code in supported_products {
+            let parsed = <MessageCode as num::FromPrimitive>::from_u32(code)
+                .unwrap_or_else(|| panic!("no MessageCode variant at all decodes to {code}"));
+            assert_eq!(
+                parsed as u32, code,
+                "code {code} decoded to a different variant ({parsed:?} = {})",
+                parsed as u32
+            );
+            assert!(
+                parsed.is_supported_product(),
+                "code {code} round-tripped to {parsed:?} but is_supported_product() is false for it"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_codes_fall_back_to_spare_and_are_rejected() {
+        let parsed = <MessageCode as num::FromPrimitive>::from_u32(65535).unwrap_or_default();
+        assert_eq!(parsed, MessageCode::Spare);
+        assert!(!parsed.is_supported_product());
+    }
+
+    /// Every product the Product Specification defines a color table for
+    /// should report one, at the level count the document gives.
+    #[test]
+    fn every_product_with_a_spec_table_exposes_it() {
+        // (product, number of levels, Product Specification section)
+        let expected = [
+            (MessageCode::BaseSpectrumWidth28, 8, "3.2.2"),
+            (MessageCode::BaseSpectrumWidth, 8, "3.2.2"),
+            (MessageCode::EchoTops, 16, "8.2.2"),
+            (MessageCode::VADWindProfile, 5, "12.2.2"),
+            (MessageCode::StormRelativeMeanRadialVelocity, 16, "16.2.2"),
+            (MessageCode::VerticallyIntegratedLiquid, 16, "17.2.2"),
+            (MessageCode::LayerCompositeReflectivityLayer1Max, 8, "23.2.2"),
+            (MessageCode::LayerCompositeReflectivityLayer2Max, 8, "23.2.2"),
+            (MessageCode::LayerCompositeReflectivityAPRemoved, 8, "23.2.2"),
+            (MessageCode::LayerCompositeReflectivity, 8, "23.2.2"),
+            (MessageCode::SurfaceRainfallAccumulation1hr, 16, "28.2.2"),
+            (MessageCode::SurfaceRainfallAccumulation3hr, 16, "28.2.2"),
+            (MessageCode::StormTotalRainfallAccumulation, 16, "29.2.2"),
+            (MessageCode::DigitalStormTotalPrecipitation, 16, "29.2.2"),
+            (MessageCode::UserSelectableLayerCompositeReflectivity, 16, "40.2.2"),
+            (MessageCode::OneHourSnowWaterEquivalent, 16, "42.2.2"),
+            (MessageCode::OneHourSnowDepth, 16, "42.2.2"),
+            (MessageCode::StormTotalSnowWaterEquivalent, 16, "43.2.2"),
+            (MessageCode::StormTotalSnowDepth, 16, "43.2.2"),
+            (MessageCode::MeltingLayer, 4, "52.2.2"),
+            (MessageCode::OneHourAccumulation, 16, "53.2.2"),
+            (MessageCode::RainRateClassification, 11, "68.2.1"),
+        ];
+
+        for (product, levels, section) in expected {
+            let table = product
+                .color_table()
+                .unwrap_or_else(|| panic!("{product:?} should have a table from section {section}"));
+            assert_eq!(
+                table.len(),
+                levels,
+                "{product:?} (section {section}) should define {levels} levels"
+            );
+            assert!(product.has_color_table());
+            // Every level the table claims must resolve to a real color.
+            for code in table.level_codes() {
+                assert!(
+                    table.color(code).is_some(),
+                    "{product:?} level {code} should resolve"
+                );
+            }
+        }
+    }
+
+    /// Base Reflectivity is a real, common product that revision AE of the
+    /// Product Specification does *not* define a table for, so it must fall
+    /// back to gray rather than panicking.
+    #[test]
+    fn products_without_a_spec_table_fall_back_to_gray() {
+        assert!(!MessageCode::BaseReflectivity20.has_color_table());
+        assert!(MessageCode::BaseReflectivity20.color_table().is_none());
+        assert_eq!(MessageCode::BaseReflectivity20.color_code(5), FALLBACK_GRAY);
+
+        // Clutter Likelihood Reflectivity is listed in the spec but every
+        // level except 0 is "TBD", so no table is transcribed for it.
+        assert!(!MessageCode::ClutterLikelihoodReflectivity.has_color_table());
+    }
+
+    #[test]
+    fn level_codes_outside_a_table_fall_back_to_gray() {
+        // Melting Layer defines only levels 0-3; 4-F are "TBD" in the spec.
+        assert_ne!(MessageCode::MeltingLayer.color_code(3), FALLBACK_GRAY);
+        assert_eq!(MessageCode::MeltingLayer.color_code(4), FALLBACK_GRAY);
+        assert_eq!(MessageCode::MeltingLayer.color_code(15), FALLBACK_GRAY);
+    }
+
+    /// Rain Rate Classification level codes step by 10, so intermediate
+    /// values are not table entries.
+    #[test]
+    fn rain_rate_classification_level_codes_step_by_ten() {
+        let rrc = MessageCode::RainRateClassification;
+        assert_eq!(rrc.color_code(0), RGBColor(0x00, 0x00, 0x00));
+        assert_eq!(rrc.color_code(20), RGBColor(0x66, 0xCC, 0x66));
+        assert_eq!(rrc.color_code(100), RGBColor(0x99, 0xCC, 0xFF));
+
+        // 5 and 15 are not defined level codes.
+        assert_eq!(rrc.color_code(5), FALLBACK_GRAY);
+        assert_eq!(rrc.color_code(15), FALLBACK_GRAY);
+        // Nor is anything past the last level.
+        assert_eq!(rrc.color_code(110), FALLBACK_GRAY);
+
+        let table = rrc.color_table().unwrap();
+        assert_eq!(
+            table.level_codes().collect::<Vec<_>>(),
+            vec![0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        );
+    }
+
+    /// VAD Wind Profile barb colours start at level code 1, matching the Wind
+    /// Barb Data Packet's 1-to-5 value range (Figure 3-13), so level 0 is not
+    /// a table entry.
+    #[test]
+    fn vad_wind_barb_level_codes_start_at_one() {
+        let vad = MessageCode::VADWindProfile;
+        assert_eq!(vad.color_code(0), FALLBACK_GRAY);
+        assert_eq!(vad.color_code(1), RGBColor(0x00, 0xFF, 0x00));
+        assert_eq!(vad.color_code(5), RGBColor(0xFF, 0x70, 0xFF));
+        assert_eq!(vad.color_code(6), FALLBACK_GRAY);
+
+        let table = vad.color_table().unwrap();
+        assert_eq!(table.level_codes().collect::<Vec<_>>(), vec![1, 2, 3, 4, 5]);
+    }
+
+    /// Spot checks against values read directly out of the Product
+    /// Specification, so a bad transcription is caught.
+    #[test]
+    fn transcribed_values_match_the_specification() {
+        // 8.2.2: levels 0 and 1 are both black ("No Data" and "kft<5").
+        assert_eq!(MessageCode::EchoTops.color_code(0), RGBColor(0x00, 0x00, 0x00));
+        assert_eq!(MessageCode::EchoTops.color_code(1), RGBColor(0x00, 0x00, 0x00));
+        assert_eq!(MessageCode::EchoTops.color_code(0x0A), RGBColor(0xFE, 0xBF, 0x00));
+        assert_eq!(MessageCode::EchoTops.color_code(0x0F), RGBColor(0xE7, 0x00, 0xFF));
+
+        // 16.2.2
+        let srm = MessageCode::StormRelativeMeanRadialVelocity;
+        assert_eq!(srm.color_code(7), RGBColor(0xCD, 0xC0, 0x9F));
+        assert_eq!(srm.color_code(0x0F), RGBColor(0x77, 0x00, 0x7D));
+
+        // 53.2.2
+        let oha = MessageCode::OneHourAccumulation;
+        assert_eq!(oha.color_code(8), RGBColor(0xAF, 0x32, 0x7D));
+        assert_eq!(oha.color_code(0x0F), RGBColor(0xFF, 0xFF, 0xFF));
+
+        // 23.2.2 (8 level)
+        let lrm = MessageCode::LayerCompositeReflectivityLayer1Max;
+        assert_eq!(lrm.color_code(0), RGBColor(0x00, 0x00, 0x00));
+        assert_eq!(lrm.color_code(7), RGBColor(0xFF, 0xFF, 0xFF));
+
+        // 3.2.2 (8 level)
+        assert_eq!(
+            MessageCode::BaseSpectrumWidth.color_code(5),
+            RGBColor(0xD0, 0x70, 0x00)
+        );
+    }
+
+    /// Section 17.2.2 lists VIL level 3 as `FA AA AA`, whereas the otherwise
+    /// identical table in 40.2.2 lists `FF AA AA` — both named "light pink".
+    /// This is a discrepancy in the document itself; both are transcribed as
+    /// printed rather than silently harmonised, and this test pins that down
+    /// so the difference is not mistaken for a typo on our side.
+    #[test]
+    fn vil_and_ulr_differ_at_level_three_as_the_document_does() {
+        assert_eq!(
+            MessageCode::VerticallyIntegratedLiquid.color_code(3),
+            RGBColor(0xFA, 0xAA, 0xAA)
+        );
+        assert_eq!(
+            MessageCode::UserSelectableLayerCompositeReflectivity.color_code(3),
+            RGBColor(0xFF, 0xAA, 0xAA)
+        );
+    }
 }

@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use nom::{
-    bytes::complete::take, multi::count, number::{complete::i16 as nom_i16, Endianness::Big}, IResult
+    bytes::complete::take, multi::count, number::{complete::i16 as nom_i16, Endianness::Big}, IResult, Parser,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::product_symbology::SymPacketData;
 
@@ -17,7 +17,7 @@ pub fn digital_radial_data_array(input: &[u8]) -> IResult<&[u8], SymPacketData> 
     debug!("{:?}", packet_header);
     info!("Reading {:?} radial blocks each with {:?} bins", num_radials, num_bins);
 
-    let (input, radials) = count(|i| data_block(i, num_bins), num_radials)(input)?;
+    let (input, radials) = count(|i| data_block(i, num_bins), num_radials).parse(input)?;
     Ok((input, SymPacketData::DigitalRadialDataArray(DigitalRadialPacket{header: packet_header, radials}) ))
 }
 
@@ -60,7 +60,8 @@ fn packet_header(input: &[u8]) -> IResult<&[u8], DigitalRadialPacketHeader> {
     
     let (input, packet_code) = nom_i16(Big)(input)?;
     if packet_code != 16 {
-        error!("Digital Radial Data Array Packet header error");
+        error!("Digital Radial Data Array Packet header should have packet code 16 but found {}", packet_code);
+        return Err(nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail)));
     }
     let (input, first_bin) = nom_i16(Big)(input)?;
     let (input, num_bins) = nom_i16(Big)(input)?;
@@ -91,13 +92,35 @@ fn data_block(input: &[u8], num_bins: usize) -> IResult<&[u8], DigitalRadial> {
     debug!("{:?}", temp_header);
 
     // Figure 3-11c. Digital Radial Data Array Packet - Packet Code 16
-    // page 3-95
-    let (input, temp_data) = take(num_bins)(input)?;
-    let radial = DigitalRadial { 
-        header: temp_header, 
-        data: temp_data.to_vec(),
+    //
+    // Note 1 of that figure: "The RPG clips radials to 70 kft. This could
+    // result in an odd number of bins in a radial. However, the radial will
+    // always be on a halfword boundary, so the number of bytes in a radial
+    // may be number of bins in a radial + 1."
+    //
+    // So the radial's own `num_bytes` — not the packet header's `num_bins` —
+    // is what advances the cursor. Consuming only `num_bins` would leave the
+    // halfword pad byte in the stream and desynchronize every radial after
+    // this one.
+    let num_bytes = usize::try_from(temp_header.num_bytes).map_err(|_| {
+        error!("Radial declares a negative byte count ({})", temp_header.num_bytes);
+        nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail))
+    })?;
+    if num_bytes < num_bins {
+        warn!(
+            "Radial declares {} bytes but the packet header declares {} bins; keeping the {} bytes present",
+            num_bytes, num_bins, num_bytes
+        );
+    }
+    let (input, payload) = take(num_bytes)(input)?;
+
+    // Keep only the data level values, discarding any halfword pad byte.
+    let data = payload[..num_bins.min(payload.len())].to_vec();
+    let radial = DigitalRadial {
+        header: temp_header,
+        data,
     };
-    
+
     Ok((input, radial))
 }
 
@@ -131,4 +154,106 @@ fn radial_header(input: &[u8]) -> IResult<&[u8], DigitalRadialHeader> {
 pub struct DigitalRadial {
     pub header: DigitalRadialHeader,
     pub data: Vec<u8>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_bytes(num_bins: i16, num_radials: i16) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&16i16.to_be_bytes()); // packet code
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // first_bin
+        bytes.extend_from_slice(&num_bins.to_be_bytes());
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // i_sweep_center
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // j_sweep_center
+        bytes.extend_from_slice(&1i16.to_be_bytes()); // range_scale
+        bytes.extend_from_slice(&num_radials.to_be_bytes());
+
+        for radial in 0..num_radials {
+            bytes.extend_from_slice(&(num_bins).to_be_bytes()); // num_bytes
+            bytes.extend_from_slice(&(radial * 10).to_be_bytes()); // angle_start
+            bytes.extend_from_slice(&10i16.to_be_bytes()); // angle_delta
+            bytes.extend(std::iter::repeat_n(radial as u8, num_bins as usize));
+        }
+        bytes
+    }
+
+    #[test]
+    fn parses_a_well_formed_packet() {
+        let bytes = sample_bytes(3, 2);
+        let (rest, parsed) = digital_radial_data_array(&bytes).unwrap();
+
+        assert!(rest.is_empty());
+        match parsed {
+            SymPacketData::DigitalRadialDataArray(packet) => {
+                assert_eq!(packet.header.num_bins, 3);
+                assert_eq!(packet.header.num_radials, 2);
+                assert_eq!(packet.radials.len(), 2);
+                assert_eq!(packet.radials[0].data, vec![0, 0, 0]);
+                assert_eq!(packet.radials[1].data, vec![1, 1, 1]);
+                assert_eq!(packet.radials[1].header.angle_start, 10);
+            }
+            other => panic!("expected DigitalRadialDataArray, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_the_wrong_packet_code() {
+        let mut bytes = sample_bytes(3, 1);
+        bytes[0..2].copy_from_slice(&99i16.to_be_bytes());
+        assert!(digital_radial_data_array(&bytes).is_err());
+    }
+
+    /// Per Note 1 of Figure 3-11c, a radial with an odd bin count is padded
+    /// to a halfword boundary, so `num_bytes == num_bins + 1`. The parser
+    /// must advance by `num_bytes`; advancing by `num_bins` used to leave the
+    /// pad byte in the stream and desynchronize every following radial.
+    #[test]
+    fn handles_halfword_pad_byte_on_odd_bin_counts() {
+        let num_bins: i16 = 3; // odd -> one pad byte per radial
+        let num_radials: i16 = 3;
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&16i16.to_be_bytes()); // packet code
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // first_bin
+        bytes.extend_from_slice(&num_bins.to_be_bytes());
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // i_sweep_center
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // j_sweep_center
+        bytes.extend_from_slice(&1i16.to_be_bytes()); // range_scale
+        bytes.extend_from_slice(&num_radials.to_be_bytes());
+
+        for radial in 0..num_radials {
+            bytes.extend_from_slice(&(num_bins + 1).to_be_bytes()); // num_bytes = bins + pad
+            bytes.extend_from_slice(&(radial * 10).to_be_bytes()); // angle_start
+            bytes.extend_from_slice(&10i16.to_be_bytes()); // angle_delta
+            bytes.extend(std::iter::repeat_n(radial as u8 + 1, num_bins as usize));
+            bytes.push(0xEE); // halfword pad byte, not a data level
+        }
+
+        let (rest, parsed) = digital_radial_data_array(&bytes).unwrap();
+
+        assert!(rest.is_empty(), "{} unconsumed byte(s) left over", rest.len());
+        match parsed {
+            SymPacketData::DigitalRadialDataArray(packet) => {
+                assert_eq!(packet.radials.len(), 3);
+                // Each radial keeps exactly num_bins data levels, and the pad
+                // byte (0xEE) is never mistaken for one.
+                assert_eq!(packet.radials[0].data, vec![1, 1, 1]);
+                assert_eq!(packet.radials[1].data, vec![2, 2, 2]);
+                assert_eq!(packet.radials[2].data, vec![3, 3, 3]);
+                // Angles stay aligned, which is what desynchronization broke.
+                assert_eq!(packet.radials[1].header.angle_start, 10);
+                assert_eq!(packet.radials[2].header.angle_start, 20);
+            }
+            other => panic!("expected DigitalRadialDataArray, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_truncated_radial_data_instead_of_panicking() {
+        let mut bytes = sample_bytes(3, 1);
+        bytes.truncate(bytes.len() - 1); // one byte short of the last radial's data
+        assert!(digital_radial_data_array(&bytes).is_err());
+    }
 }

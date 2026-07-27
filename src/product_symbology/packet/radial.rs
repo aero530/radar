@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use nom::{
-    bytes::complete::take, multi::count, number::{complete::i16 as nom_i16, Endianness::Big}, IResult
+    bytes::complete::take, multi::count, number::{complete::i16 as nom_i16, Endianness::Big}, IResult, Parser,
 };
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::product_symbology::SymPacketData;
 
@@ -17,7 +17,7 @@ pub fn radial_data_af1f(input: &[u8]) -> IResult<&[u8], SymPacketData> {
     debug!("{:?}", packet_header);
     info!("Reading {:?} radial blocks each with {:?} bins", num_radials, num_bins);
 
-    let (input, radials) = count(|i| data_block(i), num_radials)(input)?;
+    let (input, radials) = count(data_block, num_radials).parse(input)?;
     Ok((input, SymPacketData::RadialDataAF1F(RadialPacket{header: packet_header, radials}) ))
 }
 
@@ -61,6 +61,10 @@ pub struct RadialPacketHeader {
 fn packet_header(input: &[u8]) -> IResult<&[u8], RadialPacketHeader> {
     
     let (input, packet_code) = nom_i16(Big)(input)?;
+    if packet_code != -20705 {
+        error!("Radial Data Packet should have packet code AF1F (-20705) but found {}", packet_code);
+        return Err(nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail)));
+    }
     let (input, first_bin) = nom_i16(Big)(input)?;
     let (input, num_bins) = nom_i16(Big)(input)?;
     let (input, i_sweep_center) = nom_i16(Big)(input)?;
@@ -90,9 +94,23 @@ fn data_block(input: &[u8]) -> IResult<&[u8], Radial> {
     debug!("{:?}", temp_header);
 
     // decode run length encoding
-    let rle_size = temp_header.num_halfwords as usize * 2;
+    //
+    // Each RLE halfword holds two run/colour byte pairs, so the byte count is
+    // `num_halfwords * 2`. Casting a negative count straight to `usize` would
+    // wrap to an enormous value and then overflow the multiply, so validate it
+    // first (Figure 3-10 gives the range as 1 to 230).
+    let rle_size = usize::try_from(temp_header.num_halfwords)
+        .ok()
+        .and_then(|hw| hw.checked_mul(2))
+        .ok_or_else(|| {
+            error!(
+                "Radial declares an invalid RLE halfword count ({})",
+                temp_header.num_halfwords
+            );
+            nom::Err::Failure(nom::error::Error::new(input, nom::error::ErrorKind::Fail))
+        })?;
     let (input, rle) = take(rle_size)(input)?;
-    
+
     // run code then color (4bit ints)
     let data : Vec<RunLevelEncoding>= rle.iter().map(|x| RunLevelEncoding{run: x >> 4, color: x & 0b00001111}).collect();
 
@@ -141,4 +159,63 @@ pub struct Radial {
 pub struct RunLevelEncoding {
     pub run: u8,
     pub color: u8,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_bytes(rle_bytes: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(-20705i16).to_be_bytes()); // packet code AF1F
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // first_bin
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // num_bins
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // i_sweep_center
+        bytes.extend_from_slice(&0i16.to_be_bytes()); // j_sweep_center
+        bytes.extend_from_slice(&1i16.to_be_bytes()); // range_scale
+        bytes.extend_from_slice(&1i16.to_be_bytes()); // num_radials
+
+        bytes.extend_from_slice(&((rle_bytes.len() / 2) as i16).to_be_bytes()); // num_halfwords
+        bytes.extend_from_slice(&100i16.to_be_bytes()); // angle_start
+        bytes.extend_from_slice(&10i16.to_be_bytes()); // angle_delta
+        bytes.extend_from_slice(rle_bytes);
+        bytes
+    }
+
+    #[test]
+    fn decodes_run_length_encoding_into_run_and_color_nibbles() {
+        // 0x53 -> run=5, color=3; 0xA1 -> run=10, color=1
+        let bytes = sample_bytes(&[0x53, 0xA1]);
+        let (rest, parsed) = radial_data_af1f(&bytes).unwrap();
+
+        assert!(rest.is_empty());
+        match parsed {
+            SymPacketData::RadialDataAF1F(packet) => {
+                assert_eq!(packet.radials.len(), 1);
+                assert_eq!(
+                    packet.radials[0].data,
+                    vec![
+                        RunLevelEncoding { run: 5, color: 3 },
+                        RunLevelEncoding { run: 10, color: 1 },
+                    ]
+                );
+                assert_eq!(packet.radials[0].header.angle_start, 100);
+            }
+            other => panic!("expected RadialDataAF1F, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_the_wrong_packet_code() {
+        let mut bytes = sample_bytes(&[0x53, 0xA1]);
+        bytes[0..2].copy_from_slice(&16i16.to_be_bytes()); // this is packet code 16, not AF1F
+        assert!(radial_data_af1f(&bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_truncated_run_length_data_instead_of_panicking() {
+        let mut bytes = sample_bytes(&[0x53, 0xA1]);
+        bytes.pop();
+        assert!(radial_data_af1f(&bytes).is_err());
+    }
 }

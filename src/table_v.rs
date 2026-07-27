@@ -1,6 +1,14 @@
-
-/// "MSG_CODE"	HWORD#	CONTENT	UNITS	RANGE
-// MSG CODE correlates to message_codes::MessageCode
+// Table V from the ICD (product-dependent halfword meanings), kept here as
+// raw reference notes for decoding ProductDescription's halfwords_27_28 /
+// halfwords_30 / halfwords_47_53 / threshold_data fields per product type.
+//
+// This file is NOT valid Rust and is not part of the crate: it has no `mod
+// table_v;` declaration anywhere, so it is never compiled. It exists purely
+// as a searchable reference while implementing per-product decoding of
+// those fields.
+//
+// "MSG_CODE"	HWORD#	CONTENT	UNITS	RANGE
+// MSG CODE correlates to codes::MessageCode
 
 152	51	Compression Method	N/A	0 or 1
 152	52	Uncompressed Product Data Size (MSW)	Bytes	120 to 500000
