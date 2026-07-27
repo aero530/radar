@@ -1,5 +1,5 @@
 /target
 *.json
-*.png
+/*.png
 .claude
 /examples_tmp
